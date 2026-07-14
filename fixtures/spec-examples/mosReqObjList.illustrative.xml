@@ -1,0 +1,24 @@
+<mos>
+   <mosID>aircache.newscenter.com</mosID>
+   <ncsID>ncs.newscenter.com</ncsID>
+   <messageID>6666</messageID>
+   <mosReqObjList username="jbob">
+      <queryID>123439392039393ade0393zdkdls</queryID>
+      <listReturnStart>1</listReturnStart>
+      <listReturnEnd/>
+      <generalSearch>man bites dog</generalSearch>
+             <mosSchema>http://MOSA4.com/mos/supported_schemas/MOSAXML2.08</mosSchema>
+      <searchGroup>
+         <searchField XPath="/Presenter [. ='Bob']" sortByOrder="1"/>
+         <searchField XPath="/Slug [.='Dog Abuse']"/>
+   <searchField XPath="/Video/Length [.>60 AND <120]" sortByOrder="2" sortType="DESCENDING"/>
+         <searchField XPath="Producer [.!='Susan']" sortByOrder="3"/>
+      </searchGroup>
+      <searchGroup>
+         <searchField XPath="/Presenter [. ='Jennifer']" sortByOrder="1"/>
+         <searchField XPath="/Slug [.='Big Mice in City']"/>
+         <searchField XPath="/Video/Length [.>60 AND <120]" sortByOrder="2" sortType="DESCENDING"/>
+         <searchField XPath="Producer [.!='Susan']" sortByOrder="3"/>
+      </searchGroup>
+   </mosReqObjList>
+</mos>

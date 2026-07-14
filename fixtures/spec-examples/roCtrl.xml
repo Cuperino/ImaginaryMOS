@@ -1,0 +1,11 @@
+<mos>
+   <mosID>aircache.newscenter.com</mosID>
+   <ncsID>ncs.newscenter.com</ncsID>
+   <messageID>3007</messageID>
+   <roCtrl>
+<roID>3dedde9jd</roID>
+      <storyID>A3fds3d</storyID>
+      <itemID>30848</itemID>
+      <command>EXECUTE</command>
+   </roCtrl>
+</mos>

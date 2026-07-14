@@ -1,0 +1,36 @@
+<mos>
+  <ncsItem>
+    <item>
+      <itemID>2</itemID>
+<itemSlug>Cat bites dog VO</itemSlug>
+<objID>A0323H1233309873139AQz</objID> <mosID>aircache.newscenter.com</mosID>
+<mosPlugInID>Shell.Explorer.2</mosPlugInID>
+<mosAbstract>Cat Bites Dog VO :17</mosAbstract>
+<objPaths>
+        <objPath techDescription="MPEG2 Video">\\server\media\clip392028cd2320s0d.mxf</objPath>">\\server\media\clip392028cd2320s0d.mxf</objPath>
+        <objProxyPath techDescription="WM9 750Kbps">http://server/proxy/clipe.wmv</objProxyPath">http://server/proxy/clipe.wmv</objProxyPath>
+<objMetadataPath techDescription="MOS Object">http://server/proxy/clipe.xml</objMetadataPath>
+      </objPaths>
+<itemChannel>A</itemChannel>
+<itemEdStart>0</itemEdStart>
+<itemEdDur>510</itemEdDur>
+<itemUserTimingDur>310</itemUserTimingDur>
+<itemTrigger>MANUAL</itemTrigger>
+<macroIn>1;7;5</macroIn>
+<macroOut>2;8;4</macroOut>
+<mosExternalMetadata>
+  <mosScope>STORY</mosScope>
+  <mosSchema>http://ncsA4.com/mos/supported_schemas/NCSAXML2.08</mosSchema>
+  <mosPayload>
+    <Owner>SHOLMES</Owner>
+    <ModTime>20010308142001</ModTime>
+    <mediaTime>0</mediaTime>
+    <TextTime>278</TextTime>
+    <ModBy>LJOHNSTON</ModBy>
+    <Approved>0</Approved>
+    <Creator>SHOLMES</Creator>
+  </mosPayload>
+</mosExternalMetadata>
+    </item>
+  </ncsItem>
+</mos>

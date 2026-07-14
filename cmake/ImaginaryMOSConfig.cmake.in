@@ -1,0 +1,10 @@
+@PACKAGE_INIT@
+
+# SPDX-FileCopyrightText: 2026 Javier O. Cordero Pérez
+# SPDX-License-Identifier: Apache-2.0
+
+include(CMakeFindDependencyMacro)
+
+include("${CMAKE_CURRENT_LIST_DIR}/ImaginaryMOSTargets.cmake")
+
+check_required_components(ImaginaryMOS)

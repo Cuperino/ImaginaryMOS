@@ -1,0 +1,43 @@
+<mos>
+   <mosID>videoserver.station.com</mosID>
+   <ncsID>ncs.station.com</ncsID>
+   <messageID>724</messageID>
+   <mosObjCreate>
+<objSlug>Hotel Fire</objSlug>
+      <objGroup>Show 7</objGroup>
+      <objType>VIDEO</objType>
+      <objTB>59.94<objTB>
+      <objDur>1800</objDur>
+      <createdBy>Chris</createdBy>
+      <description>
+         <p>
+            Exterior footage of
+            <em>Baley Park Hotel</em>
+             on fire with natural sound. Trucks are
+        visible for the first portion of the clip.
+            <em>CG locator at 0:04 and duration 0:05, Baley Park
+        Hotel.</em>
+         </p>
+         <p>
+            <tab/>
+            Cuts to view of fire personnel exiting hotel lobby and cleaning up after the fire is out.
+         </p>
+         <p>
+            <em>Clip has been doubled for pad on voice over.</em>
+         </p>
+      </description>
+      <mosExternalMetadata>
+         <mosScope>STORY</mosScope>
+         <mosSchema>http://NCSA4.com/mos/supported_schemas/NCSAXML2.08</mosSchema>
+         <mosPayload>
+            <Owner>SHOLMES</Owner>
+            <ModTime>20010308142001</ModTime>
+            <mediaTime>0</mediaTime>
+            <TextTime>278</TextTime>
+            <ModBy>LJOHNSTON</ModBy>
+            <Approved>0</Approved>
+            <Creator>SHOLMES</Creator>
+         </mosPayload>
+      </mosExternalMetadata>
+   </mosObjCreate>
+</mos>

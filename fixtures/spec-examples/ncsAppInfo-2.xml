@@ -1,0 +1,84 @@
+<mos>
+                <mosID>aircache.newscenter.com</mosID>
+                <ncsID>ncs.newscenter.com</ncsID>
+<messageID/>
+<ncsAppInfo>
+                <roID/>
+                <storyID/>
+                <item>
+                                <itemID>2</itemID>
+                                <itemSlug>Cat bites dog VO</itemSlug>
+                <objID>A0323H1233309873139AQz</objID>
+                                <mosID>aircache.newscenter.com</mosID>
+                                <mosAbstract>Cat Bites Dog VO :17</mosAbstract>
+                                <itemChannel>A</itemChannel>
+                                <itemEdStart>0</itemEdStart>
+                                <itemEdDur>510</itemEdDur>
+                               <itemUserTimingDur>310</itemUserTimingDur>
+                                <itemTrigger>MANUAL</itemTrigger>
+                                <macroIn>1;7;5</macroIn>
+                                <macroOut>2;8;4</macroOut>
+                                <mosExternalMetadata>
+                                                <mosScope>STORY</mosScope>
+                                                <mosSchema>http://ncsA4.com/mos/supported_schemas/NCSAXML2.08</mosSchema>
+                                                <mosPayload>
+                                                                <Owner>SHOLMES</Owner>
+                                                                <ModTime>20010308142001</ModTime>
+                                                                <mediaTime>0</mediaTime>
+                                                                <TextTime>278</TextTime>
+                                                                <ModBy>LJOHNSTON</ModBy>
+                                                                <Approved>0</Approved>
+                                                                <Creator>SHOLMES</Creator>
+                                                </mosPayload>
+                                </mosExternalMetadata>
+                </item>
+                <ncsInformation>
+                                <userID>JOHNDOE</userID>
+                                <runContext>BROWSE</runContext>
+                                <software>
+                                                <manufacturer>Good Software R Us</manufacturer>
+                                                <product>story composer</product>
+                                                <version>8.9.3</version>
+                                </software>
+                                <UImetric num="0">
+                                                <startx>690</startx>
+                                                <starty>230</starty>
+                                                <endx>690</endx>
+                                                <endy>230</endy>
+                                                <mode>CONTAINED</mode>
+                                                <canClose>FALSE</canClose>
+                                </UImetric>
+                                <UImetric num="1">
+                                                <startx>810</startx>
+                                                <starty>100</starty>
+                                                <endx>810</endx>
+                                                <endy>490</endy>
+                                                <mode>CONTAINED</mode>
+                                                <canClose>FALSE</canClose>
+                                </UImetric>
+                                <UImetric num="2">
+                                                <startx>1000</startx>
+                                                <starty>575</starty>
+                                                <endx>1000</endx>
+                                                <endy>575</endy>
+                                                <mode>NONMODAL</mode>
+                                                <canClose>TRUE</canClose>
+                                </UImetric>
+                                <UImetric num="3">
+                                                <startx>200</startx>
+                                                <starty>50</starty>
+                                                <endx>400</endx>
+                                                <endy>50</endy>
+                                                <mode>TOOLBAR</mode>
+                                                <canClose>FALSE</canClose>
+                                </UImetric>
+                                <UImetric num="4">
+                                                <startx/>
+                                                <starty/>
+                                                <endx/>
+                                                <endy/>
+                                                <mode/>
+                                </UImetric>
+                </ncsInformation>
+</ncsAppInfo>
+</mos>

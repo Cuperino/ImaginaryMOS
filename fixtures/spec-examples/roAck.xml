@@ -1,0 +1,18 @@
+<mos>
+   <mosID>aircache.newscenter.com</mosID>
+   <ncsID>ncs.newscenter.com</ncsID>
+   <messageID>23569</messageID>
+   <roAck>
+<roID>96857485</roID>
+      <roStatus>Unknown object M000133</roStatus>
+      <storyID>5983A501:0049B924:8390EF2B</storyID>
+      <itemID>0</itemID>
+      <objID>M000224</objID>
+      <status>LOADED</status>
+      <storyID>3854737F:0003A34D:983A0B28</storyID>
+      <itemID>0</itemID>
+      <objID>M000133</objID>
+<itemChannel>A</itemChannel>
+      <status>UNKNOWN</status>
+   </roAck>
+</mos>

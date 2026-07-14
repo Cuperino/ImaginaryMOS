@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: 2026 Javier O. Cordero Pérez
+# SPDX-License-Identifier: Apache-2.0
+#
+# Curated static-analysis set. At M0 this runs informationally in CI; the
+# WarningsAsErrors gate is tightened in later milestones.
+---
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  concurrency-*,
+  cppcoreguidelines-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -misc-include-cleaner,
+  -misc-non-private-member-variables-in-classes,
+  -cppcoreguidelines-non-private-member-variables-in-classes
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '^.*/(core|imos|incs|capi|transports|store|dialects|plugin|tools|tests)/.*'
+FormatStyle: file

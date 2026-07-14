@@ -1,0 +1,17 @@
+<mos>
+   <mosID>prompt.station.com</mosID>
+   <ncsID>ncs.station.com</ncsID>
+   <messageID>507891</messageID>
+   <roReqStoryAction operation="MOVE" leaseLock="2" username="jbob">
+      <roStorySend>
+   <roID>96857485</roID>
+   <element_target>
+       <storyID>2</storyID>
+   </element_target>
+        <element_source>
+            <storyID>7</storyID>
+            <storyID>12</storyID>
+       </element_source>
+     </roStorySend>
+   </roReqStoryAction>
+</mos>

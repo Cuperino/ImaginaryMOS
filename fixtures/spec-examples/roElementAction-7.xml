@@ -1,0 +1,16 @@
+<mos>
+      <mosID>aircache.newscenter.com</mosID>
+      <ncsID>ncs.newscenter.com</ncsID>
+      <messageID>44338</messageID>
+      <roElementAction operation="MOVE">
+            <roID>5PM</roID>
+            <element_target>
+                  <storyID>2</storyID>
+                  <itemID>12</itemID>
+            </element_target>
+            <element_source>
+                  <itemID>23</itemID>
+                  <itemID>24</itemID>
+            </element_source>
+        </roElementAction>
+</mos>

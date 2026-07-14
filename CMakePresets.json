@@ -1,0 +1,128 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_POLICY_VERSION_MINIMUM": "3.5"
+      }
+    },
+    {
+      "name": "linux",
+      "displayName": "Linux (GCC, x86_64) — reference platform",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    },
+    {
+      "name": "linux-release",
+      "displayName": "Linux release",
+      "inherits": "linux",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+    },
+    {
+      "name": "linux-asan",
+      "displayName": "Linux ASan + UBSan",
+      "inherits": "linux",
+      "cacheVariables": { "IMOS_ENABLE_ASAN": "ON" }
+    },
+    {
+      "name": "linux-tsan",
+      "displayName": "Linux TSan",
+      "inherits": "linux",
+      "cacheVariables": { "IMOS_ENABLE_TSAN": "ON" }
+    },
+    {
+      "name": "linux-coverage",
+      "displayName": "Linux coverage",
+      "inherits": "linux",
+      "cacheVariables": { "IMOS_ENABLE_COVERAGE": "ON" }
+    },
+    {
+      "name": "macos",
+      "displayName": "macOS (Apple Clang, arm64/x86_64)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_OSX_ARCHITECTURES": "arm64;x86_64"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+    },
+    {
+      "name": "windows",
+      "displayName": "Windows (MSVC, x64)",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "android",
+      "displayName": "Android (NDK, arm64-v8a, API 28)",
+      "inherits": "base",
+      "toolchainFile": "$env{ANDROID_NDK}/build/cmake/android.toolchain.cmake",
+      "cacheVariables": {
+        "ANDROID_ABI": "arm64-v8a",
+        "ANDROID_PLATFORM": "android-28",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "IMOS_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "ios",
+      "displayName": "iOS (device arm64)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "16.0",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "IMOS_BUILD_SHARED": "OFF",
+        "IMOS_BUILD_TESTS": "OFF"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+    },
+    {
+      "name": "wasm",
+      "displayName": "WebAssembly (Emscripten, client-only, static)",
+      "inherits": "base",
+      "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "IMOS_BUILD_SHARED": "OFF",
+        "IMOS_BUILD_TESTS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "linux", "configurePreset": "linux" },
+    { "name": "linux-release", "configurePreset": "linux-release" },
+    { "name": "linux-asan", "configurePreset": "linux-asan" },
+    { "name": "linux-tsan", "configurePreset": "linux-tsan" },
+    { "name": "linux-coverage", "configurePreset": "linux-coverage" },
+    { "name": "macos", "configurePreset": "macos" },
+    { "name": "windows", "configurePreset": "windows" },
+    { "name": "android", "configurePreset": "android" },
+    { "name": "ios", "configurePreset": "ios" },
+    { "name": "wasm", "configurePreset": "wasm" }
+  ],
+  "testPresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "stopOnFailure": false }
+    },
+    { "name": "linux", "inherits": "base", "configurePreset": "linux" },
+    { "name": "linux-release", "inherits": "base", "configurePreset": "linux-release" },
+    { "name": "linux-asan", "inherits": "base", "configurePreset": "linux-asan" },
+    { "name": "linux-tsan", "inherits": "base", "configurePreset": "linux-tsan" },
+    { "name": "linux-coverage", "inherits": "base", "configurePreset": "linux-coverage" },
+    { "name": "macos", "inherits": "base", "configurePreset": "macos" },
+    { "name": "windows", "inherits": "base", "configurePreset": "windows" }
+  ]
+}

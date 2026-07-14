@@ -1,0 +1,117 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+ImaginaryMOS is a portable C++20 implementation of the **MOS Protocol v4.0**
+(broadcast newsroom ↔ media-device protocol), with 2.8.x/3.x compat. It ships
+two role libraries — `imos` (device/MOS side) and `incs` (NCS side) — over a
+shared **sans-I/O** core.
+
+The authoritative design is **`reference/imaginarymos-implementation-plan.md`**.
+Read it before non-trivial work; it defines the architecture, the profile/message
+inventory (§3.2), reliability rules (§3.3), encoding policy (§3.4), and the
+milestone plan (§13). When code and plan disagree, the plan wins unless the user
+says otherwise.
+
+**Project status is milestone-driven.** M0 (bootstrap) is done; most source
+directories are intentionally placeholder READMEs that name the milestone they
+land in (e.g. codec/session/encoding → M1, transports → M2/M6, dialects → M7).
+Don't assume a directory has real code — check. The build only wires targets that
+have real sources.
+
+## Commands
+
+```sh
+git submodule update --init --recursive        # required once; deps are pinned submodules
+
+cmake --preset linux                            # configure (presets carry all needed flags)
+cmake --build --preset linux                    # build libs + tools + tests
+ctest --preset linux                            # run all tests
+ctest --preset linux -R Smoke.CAbi              # run one test by name (regex)
+ctest --preset linux -R fixtures-verify         # run just the fixtures gate
+```
+
+- Presets (`CMakePresets.json`): `linux`, `macos`, `windows`, `android`, `ios`,
+  `wasm`, plus `linux-release` / `linux-asan` / `linux-tsan` / `linux-coverage`.
+  Always build via presets — they set `CMAKE_POLICY_VERSION_MINIMUM=3.5` (needed
+  because the pinned zlib/IXWebSocket declare pre-3.5 minimums that CMake 4.x
+  rejects). Cross presets need the toolchain (`ANDROID_NDK`, `EMSDK`, Xcode).
+- Format check (CI parity): `clang-format --dry-run --Werror <first-party .cpp/.h>`.
+  `.clang-format` is authoritative; run `clang-format -i` before committing.
+- Regenerate spec fixtures:
+  `python3 tools/extract_fixtures.py "reference/MOS Protocol 4.0 (Current).html" fixtures`
+  (CI fails if this produces a diff — keep fixtures in sync with the spec).
+- Debug the fixtures gate: `IMOS_VERIFY_DEBUG=1 ./build/linux/bin/imos-fixtures-verify fixtures`.
+
+Locally available: cmake 4.2, ninja, gcc 15, clang 21, clang-format/tidy 21.
+No emcc/NDK/Xcode here, so wasm/android/ios presets are CI-only.
+
+## Architecture (the parts that span files)
+
+**Layering (plan §4.2), strictly one-directional:**
+`transports → framing → codec → session → role APIs (imos/incs) → app`, with
+`IMessageStore`, `DialectProfile`, config, and logging cross-cutting.
+
+- **Sans-I/O core (`core/`) is the hard rule.** Nothing under `core/` may open a
+  socket, spawn a thread, read a clock, or touch the filesystem. Side effects
+  arrive only through injected interfaces (`ITransport`, `IClock`, `ITimerQueue`,
+  `IRandom`, `ILogger`, `IMessageStore`). This is what makes the WASM target and
+  deterministic (fake-clock) tests possible — preserve it.
+- **`imos` and `incs` are thin compositions over the same core.** A protocol fix
+  lands once in `core/`. `imos` is the primary product (embedded in devices,
+  pull-mode `poll()`, no library-owned threads by default).
+- **Session model:** one `PeerSession` per remote party, up to three channels
+  (`mom`/`ro`/`aux` = legacy ports 10540/10541/10542). Per channel: in-flight-of-one
+  sequencer, ack/retry, `messageID` dedupe, heartbeat/keepAlive, resync-on-unknown-ID,
+  passive-mode reconnect. Each message type knows its channel (from the spec's
+  per-message "Port" annotation).
+- **Codec invariants:** lossless unknown-subtree retention (unknown tags ride
+  through and re-serialize), opaque `mosPayload` (never re-normalized by default),
+  and byte-clean round-trip of the spec examples. The **thirteen removed legacy
+  messages** (`roStoryInsert`, `roStat`, …) are parsed and normalized onto
+  `roElementAction`/`roElementStat`, never sent in 4.0 mode.
+- **Encoding (plan §3.4):** default wire encoding is UCS-2 BE (binary WS frames);
+  UTF-8 is a per-peer option (text frames). Internally everything is UTF-8. Receive
+  side expects the configured encoding rather than sniffing.
+
+**Build system (`cmake/`):**
+- `imos_add_library()` (in `cmake/IMOSAddLibrary.cmake`) is how every first-party
+  library is defined. It compiles one OBJECT lib and emits **both** static and
+  shared targets, hidden visibility + a generated `<component>_export.h` (macro
+  like `IMOS_CORE_API`), and an `imos::<component>` alias. Use it, don't hand-roll
+  `add_library`.
+- `cmake/IMOSDependencies.cmake` builds the pinned submodules (libxml2 with a
+  minimal feature set, zlib, IXWebSocket). `cmake/shims/FindZLIB.cmake` feeds the
+  pinned zlib to IXWebSocket's `find_package(ZLIB)`. A local `add_test` override in
+  that file drops zlib's own CTest cases; forward-through means first-party
+  `add_test(NAME ...)` still works.
+- Options live in `cmake/IMOSOptions.cmake` (`IMOS_BUILD_SHARED/STATIC`,
+  `IMOS_USE_SYSTEM_DEPS`, `IMOS_ENABLE_TLS`, `IMOS_ENABLE_COMPAT28/WS3`, sanitizers).
+
+**Deferred-but-scaffolded decisions (don't "fix" these without checking the plan):**
+- TLS is off at M0 (`IMOS_ENABLE_TLS=OFF` → IXWebSocket `USE_TLS=OFF`); enabled in M2.
+- The CMake package-config/export set is gated off (`IMOS_INSTALL_PACKAGE`) until
+  M7, because exported static libs need a find_dependency story for vendored deps.
+
+## Fixtures (`fixtures/`)
+
+Generated from the local spec HTML by `tools/extract_fixtures.py`, never
+hand-edited. mosprotocol.com serves a broken TLS chain — do not try to fetch
+schemas from it; the local `reference/*.html` is the source of truth.
+
+- `schema/mos4.dtd` (DTD, with **documented errata** for spec typos like
+  `<!ELEMENT keepalive>` — see the file header) and `schema/mos4.xsd`.
+- `spec-examples/*.xml` — one per message. Files ending `.illustrative.xml` are the
+  spec's *own* non-well-formed fragments (opaque payloads, XPath with raw `<`/`>`,
+  a keepAlive typo); kept verbatim, catalogued in `manifest.json`, and **not** gated
+  by `fixtures-verify`. The naming convention (`.illustrative.`) is how the gate and
+  the codec distinguish them — preserve it.
+
+## Conventions
+
+Full rules in `docs/coding-standards.md`. Key ones: no exceptions across the
+public C++ API (`Result<T, Error>`); nothing C++ crosses the C ABI (`capi/`,
+`extern "C"`, `noexcept`, bump `IMOS_ABI_VERSION` on incompatible changes); SPDX
+Apache-2.0 header on every source file; `3rdparty/` keeps its own conventions.

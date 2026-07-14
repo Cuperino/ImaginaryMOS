@@ -1,0 +1,9 @@
+<mos>
+   <mosID>aircache.newscenter.com</mosID>
+   <ncsID>ncs.newscenter.com</ncsID>
+   <messageID>30467</messageID>
+   <roReadyToAir>
+<roID>5PM</roID>
+      <roAir>READY</roAir>
+   </roReadyToAir>
+</mos>

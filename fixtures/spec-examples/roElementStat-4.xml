@@ -1,0 +1,11 @@
+<mos>
+    <mosID>aircache.newscenter.com</mosID>
+   <ncsID>ncs.newscenter.com</ncsID>
+   <messageID>506702</messageID>
+   <roElementStat element = "STORY">
+      <roID>5PM</roID>
+      <storyID>HOTEL FIRE </storyID>
+      <status>PLAY</status>
+      <time>1999-04-11T14:13:53</time>
+  </roElementStat>
+</mos>

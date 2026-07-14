@@ -1,0 +1,38 @@
+<mos>
+      <mosID>aircache.newscenter.com</mosID>
+      <ncsID>ncs.newscenter.com</ncsID>
+      <messageID>4433250443</messageID>
+      <roElementAction operation="INSERT">
+            <roID>5PM</roID>
+            <element_target>
+                  <storyID>2</storyID>
+            </element_target>
+            <element_source>
+              <story>
+                  <storyID>17</storyID>
+                  <storySlug>Barcelona Football</storySlug>
+                  <storyNum>A2</storyNum>
+                    <item>
+                         <itemID>27</itemID>
+                         <objID>M73627</objID>
+                         <mosID>testmos</mosID>
+<objPaths>
+<objPath techDescription="MPEG2 Video">\\server\media\clip392028cd2320s0d.mxf</objPath>
+<objProxyPath techDescription="WM9 750Kbps">http://server/proxy/clipe.wmv</objProxyPath>
+                                 <objMetadataPath techDescription="MOS Object">http://server/proxy/clipe.xml</objMetadataPath>
+ </objPaths>
+                         <itemEdStart>0</itemEdStart>
+                         <itemEdDur>715</itemEdDur>
+                         <itemUserTimingDur>415</itemUserTimingDur>
+                    </item>
+                    <item>
+                         <itemID>28</itemID>
+                         <objID>M73628</objID>
+                         <mosID>testmos</mosID>
+                         <itemEdStart>0</itemEdStart>
+                         <itemEdDur>315</itemEdDur>
+                    </item>
+              </story>
+            </element_source>
+        </roElementAction>
+</mos>

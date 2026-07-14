@@ -1,0 +1,96 @@
+<mos>
+                <mosID>aircache.newscenter.com</mosID>
+                <ncsID>ncs.newscenter.com</ncsID>
+<messageID/>
+                  <ncsAppInfo>
+                     <mosObj>
+                                <objID>M000123</objID>
+                                <objSlug>Hotel Fire</objSlug>
+                                <mosAbstract>
+                                                <b>Hotel Fire</b>
+                                               <em>vo</em>:30</mosAbstract>
+                                <objGroup>Show 7</objGroup>
+                                <objType>VIDEO</objType>
+                                <objTB>59.94<objTB>
+                                <objRev>1</objRev>
+                                <objDur>1800</objDur>
+                                <status>NEW</status>
+                                <objAir>READY</objAir>
+                                <createdBy>Chris</createdBy>
+                                <created>1998-10-31T23:39:12</created>
+                                <changedBy>Chris</changedBy>
+                                <changed>1998-10-31T23:39:12</changed>
+                                <description>
+                                               <p>Exterior footage of <em>Baley Park Hotel</em>on fire with natural sound. Trucks are visible for the first portion of the clip.
+<em>CG locator at 0:04 and duration 0:05, Baley Park Hotel.</em>
+                                                </p>
+                                                <p>
+                                                                <tab/>Cuts to view of fire personnel exiting hotel lobby and cleaning up after the fire is out.</p>
+                                                <p>
+                                                                <em>Clip has been doubled for pad on voice over.</em>
+                                                </p>
+                                </description>
+                                <mosExternalMetadata>
+                                                <mosScope>STORY</mosScope>
+                                                <mosSchema>http://MOSA4.com/mos/supported_schemas/MOSAXML2.08</mosSchema>
+                                                <mosPayload>
+                                                                <Owner>SHOLMES</Owner>
+                                                                <ModTime>20010308142001</ModTime>
+                                                                <mediaTime>0</mediaTime>
+                                                                <TextTime>278</TextTime>
+                                                                <ModBy>LJOHNSTON</ModBy>
+                                                                <Approved>0</Approved>
+                                                                <Creator>SHOLMES</Creator>
+                                                </mosPayload>
+                                </mosExternalMetadata>
+                         </mosObj>
+                <ncsInformation>
+                                <userID>JOHNDOE</userID>
+                                <runContext>BROWSE</runContext>
+                                <software>
+                                                <manufacturer>Good Software R Us</manufacturer>
+                                                <product>story composer</product>
+                                                <version>8.9.3</version>
+                                </software>
+                                <UImetric num="0">
+                                                <startx>690</startx>
+                                                <starty>230</starty>
+                                                <endx>690</endx>
+                                                <endy>230</endy>
+                                                <mode>CONTAINED</mode>
+                                                <canClose>FALSE</canClose>
+                                </UImetric>
+                                <UImetric num="1">
+                                                <startx>810</startx>
+                                                <starty>100</starty>
+                                                <endx>810</endx>
+                                                <endy>490</endy>
+                                                <mode>CONTAINED</mode>
+                                                <canClose>FALSE</canClose>
+                                </UImetric>
+                                <UImetric num="2">
+                                                <startx>1000</startx>
+                                                <starty>575</starty>
+                                                <endx>1000</endx>
+                                                <endy>575</endy>
+                                                <mode>NONMODAL</mode>
+                                                <canClose>TRUE</canClose>
+                                </UImetric>
+                                <UImetric num="3">
+                                                <startx>200</startx>
+                                                <starty>50</starty>
+                                                <endx>400</endx>
+                                                <endy>50</endy>
+                                                <mode>TOOLBAR</mode>
+                                                <canClose>FALSE</canClose>
+                                </UImetric>
+                                <UImetric num="4">
+                                                <startx/>
+                                                <starty/>
+                                                <endx/>
+                                                <endy/>
+                                                <mode/>
+                                </UImetric>
+                  </ncsInformation>
+            </ncsAppInfo>
+</mos>

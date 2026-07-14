@@ -1,0 +1,28 @@
+<mos>
+      <mosID>aircache.newscenter.com</mosID>
+      <ncsID>ncs.newscenter.com</ncsID>
+      <messageID>44335</messageID>
+      <roElementAction operation="REPLACE">
+            <roID>5PM</roID>
+            <element_target>
+                  <storyID>2</storyID>
+                  <itemID>23</itemID>
+            </element_target>
+            <element_source>
+              <item>
+                  <itemID>27</itemID>
+                  <itemSlug>NHL PKG</itemSlug>
+                  <objID>M19873</objID>
+                  <mosID>testmos</mosID>
+<objPaths>
+<objPath techDescription="MPEG2 Video">\\server\media\clip392028cd2320s0d.mxf</objPath>
+<objProxyPath techDescription="WM9 750Kbps">http://server/proxy/clipe.wmv</objProxyPath>
+<objMetadataPath techDescription="MOS Object">http://server/proxy/clipe.xml</objMetadataPath>
+</objPaths>
+                  <itemEdStart>0</itemEdStart>
+                  <itemEdDur>700</itemEdDur>
+                  <itemUserTimingDur>690</itemUserTimingDur>
+              </item>
+            </element_source>
+        </roElementAction>
+</mos>

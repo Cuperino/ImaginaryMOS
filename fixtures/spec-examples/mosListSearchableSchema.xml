@@ -1,0 +1,8 @@
+<mos>
+   <mosID>aircache.newscenter.com</mosID>
+   <ncsID>ncs.newscenter.com</ncsID>
+   <messageID>2782</messageID>
+   <mosListSearchableSchema username="jbob">
+      <mosSchema>http://MOSA4.com/mos/supported_schemas/MOSAXML2.08</mosSchema>
+   </mosListSearchableSchema>
+</mos>

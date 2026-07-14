@@ -1,0 +1,118 @@
+# SPDX-FileCopyrightText: 2026 Javier O. Cordero Pérez
+# SPDX-License-Identifier: Apache-2.0
+#
+# M0 CI skeleton: a green build matrix across the six official targets
+# (build-only where the platform can't run our tests) plus lint and
+# fixtures-freshness gates. Deeper suites (fuzz, soak, coverage upload,
+# packaging) are added by later milestones.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # --- Native build + test (Linux, macOS, Windows) --------------------
+  build-test:
+    name: build+test ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-gcc,   os: ubuntu-latest,  preset: linux,   cc: gcc,   cxx: g++ }
+          - { name: linux-clang, os: ubuntu-latest,  preset: linux,   cc: clang, cxx: clang++ }
+          - { name: linux-asan,  os: ubuntu-latest,  preset: linux-asan, cc: clang, cxx: clang++ }
+          - { name: macos,       os: macos-latest,   preset: macos }
+          - { name: windows,     os: windows-latest, preset: windows }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install CMake + Ninja
+        uses: lukka/get-cmake@latest
+      - name: Set up MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Select compiler
+        if: matrix.cc != ''
+        shell: bash
+        run: echo "CC=${{ matrix.cc }}" >> "$GITHUB_ENV"; echo "CXX=${{ matrix.cxx }}" >> "$GITHUB_ENV"
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+  # --- Cross-compile build-only (Android, iOS, WebAssembly) -----------
+  build-android:
+    name: build android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - uses: lukka/get-cmake@latest
+      - name: Configure + build
+        env:
+          ANDROID_NDK: ${{ env.ANDROID_NDK_LATEST_HOME }}
+        run: |
+          cmake --preset android
+          cmake --build --preset android
+
+  build-wasm:
+    name: build wasm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - uses: lukka/get-cmake@latest
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 4.0.7
+      - name: Configure + build
+        run: |
+          cmake --preset wasm
+          cmake --build --preset wasm
+
+  build-ios:
+    name: build ios
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - uses: lukka/get-cmake@latest
+      - name: Configure + build
+        run: |
+          cmake --preset ios
+          cmake --build --preset ios
+
+  # --- Lint: formatting + fixtures freshness --------------------------
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - name: Install clang-format
+        run: pipx install "clang-format~=21.1"
+      - name: Check formatting
+        run: |
+          files=$(find core imos incs capi transports tools tests -type f \
+            \( -name '*.cpp' -o -name '*.h' \))
+          clang-format --dry-run --Werror $files
+      - name: Check fixtures are up to date with the spec
+        run: |
+          python3 tools/extract_fixtures.py "reference/MOS Protocol 4.0 (Current).html" fixtures
+          git diff --exit-code -- fixtures \
+            || { echo "::error::fixtures are stale; regenerate with tools/extract_fixtures.py"; exit 1; }

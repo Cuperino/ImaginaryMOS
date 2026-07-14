@@ -1,0 +1,22 @@
+<mos>
+   <mosID>prompt.station.com</mosID>
+   <ncsID>videoserver.station.group.com</ncsID>
+   <messageID>400932</messageID>
+   <roItemCue>
+      <mosID>videoserver.station.group.com</mosID>
+      <roID>96857485</roID>
+      <storyID>5983A501:0049B924:8390EF2B</storyID>
+      <itemID>234343234</itemID>
+      <roEventType>Prompter</roEventType>
+      <roEventTime>2000-03-20T10:45:00.00</roEventTime>
+      <mosExternalMetadata>
+         <mosScope>PLAYLIST</mosScope>
+         <mosSchema>http://ncsA4.com/mos/supported_schemas/NCSBBBBXML2.08</mosSchema>
+         <mosPayload>
+            <triggeredby>operator</triggeredby>
+            <operatorType>prompter</operatorType>
+            <netPropDelay>10</netPropDelay>
+         </mosPayload>
+      </mosExternalMetadata>
+   </roItemCue>
+</mos>

@@ -1,0 +1,47 @@
+<mos>
+ <mosID>aircache.newscenter.com</mosID>
+ <ncsID>ncs.newscenter.com</ncsID>
+   <messageID>300045</messageID>
+   <roListAll>
+     <ro>
+       <roID>5PM</roID>
+       <roSlug>5PM Rundown</roSlug>
+       <roChannel></roChannel>
+       <roEdStart>2009-07-11T17:00:00</roEdStart>
+       <roEdDur>00:30:00</roEdDur>
+       <roTrigger>MANUAL</roTrigger>
+       <mosExternalMetadata>
+         <mosScope>PLAYLIST</mosScope>
+         <mosSchema>http://ncsA4.com/mos/supported_schemas/NCSAXML2.08</mosSchema>
+         <mosPayload>
+            <Owner>SHOLMES</Owner>
+            <mediaTime>0</mediaTime>
+            <TextTime>278</TextTime>
+            <ModBy>LJOHNSTON</ModBy>
+            <Approved>0</Approved>
+            <Creator>SHOLMES</Creator>
+         </mosPayload>
+      </mosExternalMetadata>
+     </ro>
+     <ro>
+       <roID>6PM</roID>
+       <roSlug>6PM Rundown</roSlug>
+       <roChannel></roChannel>
+       <roEdStart>2009-07-09T18:00:00</roEdStart>
+       <roEdDur>00:30:00</roEdDur>
+       <roTrigger>MANUAL</roTrigger>
+       <mosExternalMetadata>
+         <mosScope>PLAYLIST</mosScope>
+         <mosSchema>http://ncsA4.com/mos/supported_schemas/NCSAXML2.08</mosSchema>
+         <mosPayload>
+            <Owner>SHOLMES</Owner>
+            <mediaTime>0</mediaTime>
+            <TextTime>350</TextTime>
+            <ModBy>BSMITH</ModBy>
+            <Approved>1</Approved>
+            <Creator>SHOLMES</Creator>
+         </mosPayload>
+      </mosExternalMetadata>
+      </ro>
+   </roListAll>
+</mos>

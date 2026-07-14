@@ -1,0 +1,12 @@
+<mos>
+      <mosID>aircache.newscenter.com</mosID>
+      <ncsID>ncs.newscenter.com</ncsID>
+      <messageID>44339</messageID>
+      <roElementAction operation="SWAP">
+            <roID>5PM</roID>
+            <element_source>
+                  <storyID>3</storyID>
+                  <storyID>5</storyID>
+            </element_source>
+        </roElementAction>
+</mos>

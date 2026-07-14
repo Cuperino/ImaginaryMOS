@@ -1,0 +1,21 @@
+<mos>
+   <mosID>aircache.newscenter.com</mosID>
+   <ncsID>ncs.newscenter.com</ncsID>
+   <messageID>654033</messageID>
+   <roMetadataReplace>
+<roID>96857485</roID>
+      <roSlug>5PM RUNDOWN</roSlug>
+      <roEdStart>2009-04-17T17:02:00</roEdStart>
+      <roEdDur>00:58:25</roEdDur>
+      <mosExternalMetadata>
+         <mosScope>PLAYLIST</mosScope><mosSchema>http://MOSA4.com/mos/supported_schemas/MOSAXML2.08</mosSchema>
+         <mosPayload>
+            <Owner>SHOLMES</Owner>
+            <transitionMode>2</transitionMode>
+            <transitionPoint>463</transitionPoint>
+            <source>a</source>
+            <destination>b</destination>
+         </mosPayload>
+      </mosExternalMetadata>
+   </roMetadataReplace>
+</mos>

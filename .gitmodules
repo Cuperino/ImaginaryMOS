@@ -1,0 +1,12 @@
+[submodule "3rdparty/libxml2"]
+	path = 3rdparty/libxml2
+	url = https://github.com/GNOME/libxml2.git
+	ignore = dirty
+[submodule "3rdparty/IXWebSocket"]
+	path = 3rdparty/IXWebSocket
+	url = https://github.com/machinezone/IXWebSocket.git
+	ignore = dirty
+[submodule "3rdparty/zlib"]
+	path = 3rdparty/zlib
+	url = https://github.com/madler/zlib.git
+	ignore = dirty

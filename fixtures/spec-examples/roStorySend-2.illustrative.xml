@@ -1,0 +1,116 @@
+<mos>
+   <mosID>prompt.station.com</mosID>
+   <ncsID>ncs.station.com</ncsID>
+   <messageID>507891</messageID>
+   <roStorySend>
+<roID>96857485</roID>
+      <storyID>5983A501:0049B924:8390EF1F</storyID>
+      <storySlug>Show Open</storySlug>
+      <storyNum>C8</storyNum>
+      <storyBody Read1stMEMasBody="true">
+      </storyBody>
+      <mosExternalMetadata>
+         <mosScope>PLAYLIST</mosScope>
+               <mosSchema>http://NCSA4.com/mos/supported_schemas/NCSAXML2.08</mosSchema>
+         <mosPayload>
+      <?xml version="1.0" encoding="iso-8859-1" standalone="yes"?>
+      <NewsML>
+<!--Processed by DeltaToNewsML rev1c-->
+<Catalog Href="http://www.afp.com/dtd/AFPCatalog.xml"/>
+<NewsEnvelope>
+      <DateAndTime>20030319T000031Z</DateAndTime>
+      <NewsService FormalName="FRSGL"/>
+      <Priority FormalName="3"/>
+</NewsEnvelope>
+<NewsItem>
+      <Identification>
+            <NewsIdentifier>
+                  <ProviderId>ap.org</ProviderId>
+                  <DateId>20030319</DateId>
+                  <NewsItemId>000031-TX-LNH41</NewsItemId>
+                  <RevisionId PreviousRevision="0"
+Update="N">1</RevisionId>
+                  <PublicIdentifier>urn:newsml:afp.com:20030319:000031-TX-
+LNH41:1</PublicIdentifier>
+            </NewsIdentifier>
+            <NameLabel>Irak-Onu</NameLabel>
+            <Label>
+                  <LabelType FormalName="SequenceNumber"/>
+                  <LabelText>21</LabelText>
+            </Label>
+      </Identification>
+      <NewsManagement>
+            <NewsItemType FormalName="News"/>
+            <FirstCreated>20030319T000031Z</FirstCreated>
+            <ThisRevisionCreated>20030319T000031Z</ThisRevisionCreated>
+            <Status FormalName="Usable"/>
+      </NewsManagement>
+      <NewsComponent>
+            <NewsLines>
+<HeadLine> Israel to Push Even Deeper Into Lebanon</HeadLine>
+                  <DateLine> JERUSALEM (AP) </DateLine>
+                  <CopyrightLine>© 2006 AP</CopyrightLine>
+<SlugLine>Israel at war with Lebanon </SlugLine>
+            </NewsLines>
+            <AdministrativeMetadata>
+                  <Provider>
+                        <Party FormalName="AFP"/>
+                  </Provider>
+                  <Creator>
+                        <Party FormalName="BUR"/>
+                  </Creator>
+            </AdministrativeMetadata>
+            <DescriptiveMetadata>
+                  <Language FormalName="fr-FR"/>
+                  <SubjectCode>
+<Subject Vocabulary="urn:newsml:afp.com:20011001:AFPCatCodes:1" FormalName="I"/>
+                  </SubjectCode>
+                  <SubjectCode>
+<Subject Vocabulary="urn:newsml:afp.com:20011001:AFPCatCodes:1" FormalName="P"/>
+                  </SubjectCode>
+                  <SubjectCode>
+                        <Subject FormalName="11000000"/>
+                  </SubjectCode>
+                  <Property FormalName="Location">
+<Property FormalName="Country" Value="IRQ"/>
+<Property FormalName="City" Value="BAGDA"/>
+                  </Property>
+            </DescriptiveMetadata>
+            <ContentItem>
+                  <MediaType FormalName="Text"/>
+                  <Format FormalName="bcNITF2.5"/>
+                  <Characteristics>
+<Property FormalName="WordCount" Value="823"/>
+                  </Characteristics>
+                  <DataContent>
+<p> JERUSALEM (AP) -- Israel's Security Cabinet overwhelmingly decided Wednesday to send troops deeper into Lebanon in a major expansion of the ground war - an attempt to further damage Hezbollah and score quick battlefield victories before a cease-fire is imposed.</p>
+<p>The move came as fierce fighting was reported overnight with Hezbollah militants, and Arab broadcaster Al-Jazeera reported 11 Israeli soldiers had been killed in what would be the deadliest day for Israeli troops in Lebanon in four weeks of fighting.</p>
+<p>A minister who spoke on condition of anonymity because he was not authorized to give details, said the offensive would not begin for two or three days so as not interfere with efforts to broker a cease-fire at the United Nations. However, senior military officials said it would start far quicker than that.</p>
+<p>Soon after the Cabinet voted 9-0 with three abstentions, a column of Israeli tanks and armored vehicles crossed into southern Lebanon and took up positions.</p>
+<p>The Cabinet decision was risky. Israel could set itself up for new criticism that it is sabotaging diplomatic efforts, particularly after Lebanon offered to deploy its own troops in the border area.</p>
+<p>A wider ground offensive also might do little to stop Hezbollah rocket fire on Israel, while sharply increasing the already-high number of casualties among Israeli troops.</p>
+<p>Since the fighting began, at least 700 people have died on the Lebanese side. The Israeli toll stood at 103 killed - including 36 civilians.</p>
+<p>In the six-hour meeting, Cabinet officials were told a new offensive could mean 100 to 200 more military deaths, a participant said on condition of anonymity because he was not authorized to brief reporters. At least 67 Israeli soldiers have been confirmed killed.</p>
+<p>Secretary of State Condoleezza Rice and Prime Minister Ehud Olmert spoke by telephone for a half-hour during the meeting, Israeli officials said. Olmert told the ministers the offensive will be accompanied by a diplomatic initiative, based on a U.S.-French truce proposal that would take Lebanon's concerns into account, a participant in the meeting said.</p>
+<p>Under the army's plan, troops would push to Lebanon's Litani River, about 18 miles from the border. Olmert and Defense Minister Amir Peretz will decide on the timing of the new push, said Trade Minister Eli Yishai, a member of the Security Cabinet.</p>
+<p>"The assessment is it will last 30 days," Yishai said afterward. "I think it is wrong to make this assessment. I think it will take a lot longer, " added Yishai, who had abstained in the vote..</p>
+<p>The offensive won't require a new call-up of reserves, Cabinet officials said. The government approved a call-up of some 30,000 reservists earlier this month.</p>
+<p>More than 10,000 troops are in Lebanon, many of them regular soldiers. They are fighting in a four-mile stretch, and have encountered fierce resistance from Hezbollah.</p>
+<p>The decision on the wider offensive came a day after the commander of Israeli forces in Lebanon was sidelined in an unusual midwar shake-up - another sign of the growing dissatisfaction with the military, which has been unable to stop Hezbollah's rocket barrages.</p>
+<p>The army denied it was dissatisfied with Maj. Gen. Udi Adam, but military commentators said the commander was seen as too slow and cautious. The deputy chief of staff, Maj. Gen. Moshe Kaplinski, was appointed to oversee the Lebanon fighting.</p>
+<p>At least six missiles fired from Israeli ships slammed into Beirut's southern suburbs as Israel continued its sporadic attacks on Shiite neighborhoods and Hezbollah strongholds, police said. Smoke and dust rising over several square blocks.</p>
+<p>At least six missiles fired from Israel ships slammed into the south Beirut suburbs Wednesday, as residents were conducting a funeral for some of the 41 victims killed in Israeli airstrikes there three days earlier, police said.</p>
+<p>About a mile away, some 400 people marched in a funeral procession for 30 of the 41 killed in an Israeli airstrike Monday. They carried the bodies draped in Lebanon's green, red and white flag and chanted, "Death to America! Death to Israel!".</p>
+<p>The Israeli military has declared a no-drive zone south of the Litani and threatened to blast any moving vehicles. Country roads and highways were deserted. In the Lebanese coastal city of Tyre, only pedestrians ventured into the streets.</p>
+<p>The Al-Jazeera report said 11 Israeli soldiers were killed in heavy fighting with Hezbollah guerrillas near the border. The Israeli army declined to comment on the report but had said earlier that 15 soldiers were wounded in overnight clashes.</p>
+                        <p>bur-jr/prh </p>
+                        <p/>
+                  </DataContent>
+            </ContentItem>
+      </NewsComponent>
+</NewsItem>
+</NewsML>
+</mosPayload>
+      </mosExternalMetadata>
+   </roStorySend>
+</mos>

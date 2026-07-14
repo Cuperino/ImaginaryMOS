@@ -1,0 +1,34 @@
+<mos>
+   <mosID>aircache.newscenter.com</mosID>
+   <ncsID>ncs.newscenter.com</ncsID>
+   <messageID>9088</messageID>
+   <mosItemReplace>
+<roID>5PM</roID>
+      <storyID>HOTEL FIRE</storyID>
+      <item>
+         <itemID>30848</itemID>
+         <objID>M000627</objID>
+         <mosID>testmos.enps.com</mosID>
+    <objPaths>
+<objPath techDescription="MPEG2 Video">\\server\media\clip392028cd2320s0d.mxf</objPath>
+<objProxyPath techDescription="WM9 750Kbps">http://server/proxy/clipe.wmv</objProxyPath>
+<objMetadataPath techDescription="MOS Object">http://server/proxy/clipe.xml</objMetadataPath>
+    </objPaths>
+         <itemEdStart>0</itemEdStart>
+         <itemEdDur>815</itemEdDur>
+         <itemUserTimingDur>310</itemUserTimingDur>
+         <macroIn>c01/l04/dve07</macroIn>
+         <macroOut>r00</macroOut>
+         <mosExternalMetadata>
+            <mosScope>PLAYLIST</mosScope>
+            <mosSchema>HTTP://VENDOR/MOS/supportedSchemas/vvend280</mosSchema>
+            <mosPayload>
+               <trigger>837</trigger>
+               <key>110</key>
+               <fade>17</fade>
+               <efxTime>15</efxTime>
+            </mosPayload>
+         </mosExternalMetadata>
+      </item>
+   </mosItemReplace>
+</mos>

@@ -1,0 +1,10 @@
+<mos>
+    <mosID>aircache.newscenter.com</mosID>
+   <ncsID>ncs.newscenter.com</ncsID>
+   <messageID>506702</messageID>
+   <roElementStat element = "RO">
+      <roID>5PM</roID>
+      <status>MANUAL CTRL</status>
+      <time>2009-04-11T14:13:53</time>
+  </roElementStat>
+</mos>

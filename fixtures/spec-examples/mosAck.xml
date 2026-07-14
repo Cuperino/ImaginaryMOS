@@ -1,0 +1,11 @@
+<mos>
+  <mosID>aircache.newscenter.com</mosID>
+  <ncsID>ncs.newscenter.com</ncsID>
+  <messageID>99</messageID>
+  <mosAck>
+    <objID>M000123</objID>
+    <objRev>1</objRev>
+    <status>ACK</status>
+    <statusDescription></statusDescription>
+  </mosAck>
+</mos>

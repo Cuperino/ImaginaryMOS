@@ -1,0 +1,445 @@
+{
+  "count": 71,
+  "wellformed": 59,
+  "illustrative": 12,
+  "examples": [
+    {
+      "file": "heartbeat.xml",
+      "message": "heartbeat",
+      "section": "4.1.2",
+      "wellformed": true
+    },
+    {
+      "file": "keepAlive-2.illustrative.xml",
+      "message": "keepAlive",
+      "section": "4.1.1",
+      "wellformed": false,
+      "reason": "spec typo: closing </keepAlive> with no opening tag"
+    },
+    {
+      "file": "keepAlive.xml",
+      "message": "keepAlive",
+      "section": "2.1",
+      "wellformed": true
+    },
+    {
+      "file": "listMachInfo-2.xml",
+      "message": "listMachInfo",
+      "section": "4.1.4",
+      "wellformed": true
+    },
+    {
+      "file": "listMachInfo-3.xml",
+      "message": "listMachInfo",
+      "section": "4.1.4",
+      "wellformed": true
+    },
+    {
+      "file": "listMachInfo.xml",
+      "message": "listMachInfo",
+      "section": "4.1.4",
+      "wellformed": true
+    },
+    {
+      "file": "mosAck.xml",
+      "message": "mosAck",
+      "section": "3.1.1",
+      "wellformed": true
+    },
+    {
+      "file": "mosItemReplace-2.xml",
+      "message": "mosItemReplace",
+      "section": "5.3.9",
+      "wellformed": true
+    },
+    {
+      "file": "mosItemReplace.xml",
+      "message": "mosItemReplace",
+      "section": "3.3.2",
+      "wellformed": true
+    },
+    {
+      "file": "mosListAll.illustrative.xml",
+      "message": "mosListAll",
+      "section": "3.2.2",
+      "wellformed": false,
+      "reason": "non-standalone spec fragment (mixed-content or opaque mosPayload)"
+    },
+    {
+      "file": "mosListSearchableSchema.xml",
+      "message": "mosListSearchableSchema",
+      "section": "3.2.4",
+      "wellformed": true
+    },
+    {
+      "file": "mosObj-2.illustrative.xml",
+      "message": "mosObj",
+      "section": "4.1.7",
+      "wellformed": false,
+      "reason": "non-standalone spec fragment (mixed-content or opaque mosPayload)"
+    },
+    {
+      "file": "mosObj.xml",
+      "message": "mosObj",
+      "section": "3.1.2",
+      "wellformed": true
+    },
+    {
+      "file": "mosObjCreate.illustrative.xml",
+      "message": "mosObjCreate",
+      "section": "3.3.1",
+      "wellformed": false,
+      "reason": "non-standalone spec fragment (mixed-content or opaque mosPayload)"
+    },
+    {
+      "file": "mosObjList.illustrative.xml",
+      "message": "mosObjList",
+      "section": "3.2.6",
+      "wellformed": false,
+      "reason": "non-standalone spec fragment (mixed-content or opaque mosPayload)"
+    },
+    {
+      "file": "mosReqAll.xml",
+      "message": "mosReqAll",
+      "section": "3.2.1",
+      "wellformed": true
+    },
+    {
+      "file": "mosReqObj.xml",
+      "message": "mosReqObj",
+      "section": "3.1.3",
+      "wellformed": true
+    },
+    {
+      "file": "mosReqObjAction-2.illustrative.xml",
+      "message": "mosReqObjAction",
+      "section": "3.3.3",
+      "wellformed": false,
+      "reason": "non-standalone spec fragment (mixed-content or opaque mosPayload)"
+    },
+    {
+      "file": "mosReqObjAction-3.xml",
+      "message": "mosReqObjAction",
+      "section": "3.3.3",
+      "wellformed": true
+    },
+    {
+      "file": "mosReqObjAction.illustrative.xml",
+      "message": "mosReqObjAction",
+      "section": "3.3.3",
+      "wellformed": false,
+      "reason": "non-standalone spec fragment (mixed-content or opaque mosPayload)"
+    },
+    {
+      "file": "mosReqObjList.illustrative.xml",
+      "message": "mosReqObjList",
+      "section": "3.2.5",
+      "wellformed": false,
+      "reason": "raw < or > inside an XPath attribute value (searchField)"
+    },
+    {
+      "file": "mosReqSearchableSchema.xml",
+      "message": "mosReqSearchableSchema",
+      "section": "3.2.3",
+      "wellformed": true
+    },
+    {
+      "file": "ncsAck.xml",
+      "message": "ncsAck",
+      "section": "5.3.1",
+      "wellformed": true
+    },
+    {
+      "file": "ncsAppInfo-2.xml",
+      "message": "ncsAppInfo",
+      "section": "5.3.3",
+      "wellformed": true
+    },
+    {
+      "file": "ncsAppInfo.illustrative.xml",
+      "message": "ncsAppInfo",
+      "section": "5.3.3",
+      "wellformed": false,
+      "reason": "non-standalone spec fragment (mixed-content or opaque mosPayload)"
+    },
+    {
+      "file": "ncsItem.illustrative.xml",
+      "message": "ncsItem",
+      "section": "5.3.8",
+      "wellformed": false,
+      "reason": "calibre export mangled an embedded file-path hyperlink; a clean equivalent example exists"
+    },
+    {
+      "file": "ncsItemRequest.xml",
+      "message": "ncsItemRequest",
+      "section": "5.3.6",
+      "wellformed": true
+    },
+    {
+      "file": "ncsReqAppClose.xml",
+      "message": "ncsReqAppClose",
+      "section": "5.3.10",
+      "wellformed": true
+    },
+    {
+      "file": "ncsReqAppInfo.xml",
+      "message": "ncsReqAppInfo",
+      "section": "5.3.2",
+      "wellformed": true
+    },
+    {
+      "file": "ncsReqAppMode.xml",
+      "message": "ncsReqAppMode",
+      "section": "5.3.4",
+      "wellformed": true
+    },
+    {
+      "file": "ncsReqStoryAction-2.xml",
+      "message": "ncsReqStoryAction",
+      "section": "5.3.10",
+      "wellformed": true
+    },
+    {
+      "file": "ncsReqStoryAction-3.xml",
+      "message": "ncsReqStoryAction",
+      "section": "5.3.10",
+      "wellformed": true
+    },
+    {
+      "file": "ncsReqStoryAction.xml",
+      "message": "ncsReqStoryAction",
+      "section": "5.3.10",
+      "wellformed": true
+    },
+    {
+      "file": "ncsStoryRequest.xml",
+      "message": "ncsStoryRequest",
+      "section": "5.3.5",
+      "wellformed": true
+    },
+    {
+      "file": "reqMachInfo.xml",
+      "message": "reqMachInfo",
+      "section": "4.1.3",
+      "wellformed": true
+    },
+    {
+      "file": "roAck.xml",
+      "message": "roAck",
+      "section": "3.4.1",
+      "wellformed": true
+    },
+    {
+      "file": "roCreate.xml",
+      "message": "roCreate",
+      "section": "3.4.2",
+      "wellformed": true
+    },
+    {
+      "file": "roCtrl.xml",
+      "message": "roCtrl",
+      "section": "3.7.3",
+      "wellformed": true
+    },
+    {
+      "file": "roDelete.xml",
+      "message": "roDelete",
+      "section": "3.4.5",
+      "wellformed": true
+    },
+    {
+      "file": "roElementAction-10.xml",
+      "message": "roElementAction",
+      "section": "3.6.1",
+      "wellformed": true
+    },
+    {
+      "file": "roElementAction-11.xml",
+      "message": "roElementAction",
+      "section": "3.6.1",
+      "wellformed": true
+    },
+    {
+      "file": "roElementAction-2.xml",
+      "message": "roElementAction",
+      "section": "3.6.1",
+      "wellformed": true
+    },
+    {
+      "file": "roElementAction-3.xml",
+      "message": "roElementAction",
+      "section": "3.6.1",
+      "wellformed": true
+    },
+    {
+      "file": "roElementAction-4.xml",
+      "message": "roElementAction",
+      "section": "3.6.1",
+      "wellformed": true
+    },
+    {
+      "file": "roElementAction-5.xml",
+      "message": "roElementAction",
+      "section": "3.6.1",
+      "wellformed": true
+    },
+    {
+      "file": "roElementAction-6.xml",
+      "message": "roElementAction",
+      "section": "3.6.1",
+      "wellformed": true
+    },
+    {
+      "file": "roElementAction-7.xml",
+      "message": "roElementAction",
+      "section": "3.6.1",
+      "wellformed": true
+    },
+    {
+      "file": "roElementAction-8.xml",
+      "message": "roElementAction",
+      "section": "3.6.1",
+      "wellformed": true
+    },
+    {
+      "file": "roElementAction-9.xml",
+      "message": "roElementAction",
+      "section": "3.6.1",
+      "wellformed": true
+    },
+    {
+      "file": "roElementAction.xml",
+      "message": "roElementAction",
+      "section": "3.6.1",
+      "wellformed": true
+    },
+    {
+      "file": "roElementStat-2.xml",
+      "message": "roElementStat",
+      "section": "3.7.1",
+      "wellformed": true
+    },
+    {
+      "file": "roElementStat-3.xml",
+      "message": "roElementStat",
+      "section": "3.7.1",
+      "wellformed": true
+    },
+    {
+      "file": "roElementStat-4.xml",
+      "message": "roElementStat",
+      "section": "3.8.2",
+      "wellformed": true
+    },
+    {
+      "file": "roElementStat.xml",
+      "message": "roElementStat",
+      "section": "3.7.1",
+      "wellformed": true
+    },
+    {
+      "file": "roItemCue-2.xml",
+      "message": "roItemCue",
+      "section": "3.7.2",
+      "wellformed": true
+    },
+    {
+      "file": "roItemCue.xml",
+      "message": "roItemCue",
+      "section": "3.7.2",
+      "wellformed": true
+    },
+    {
+      "file": "roList.xml",
+      "message": "roList",
+      "section": "3.5.2",
+      "wellformed": true
+    },
+    {
+      "file": "roListAll.xml",
+      "message": "roListAll",
+      "section": "3.5.4",
+      "wellformed": true
+    },
+    {
+      "file": "roMetadataReplace.xml",
+      "message": "roMetadataReplace",
+      "section": "3.4.4",
+      "wellformed": true
+    },
+    {
+      "file": "roReadyToAir.xml",
+      "message": "roReadyToAir",
+      "section": "3.5.5",
+      "wellformed": true
+    },
+    {
+      "file": "roReplace.xml",
+      "message": "roReplace",
+      "section": "3.4.3",
+      "wellformed": true
+    },
+    {
+      "file": "roReq.xml",
+      "message": "roReq",
+      "section": "3.5.1",
+      "wellformed": true
+    },
+    {
+      "file": "roReqAll.xml",
+      "message": "roReqAll",
+      "section": "3.5.3",
+      "wellformed": true
+    },
+    {
+      "file": "roReqStoryAction-2.xml",
+      "message": "roReqStoryAction",
+      "section": "3.9.1",
+      "wellformed": true
+    },
+    {
+      "file": "roReqStoryAction-3.xml",
+      "message": "roReqStoryAction",
+      "section": "3.9.1",
+      "wellformed": true
+    },
+    {
+      "file": "roReqStoryAction-4.xml",
+      "message": "roReqStoryAction",
+      "section": "3.9.1",
+      "wellformed": true
+    },
+    {
+      "file": "roReqStoryAction-5.xml",
+      "message": "roReqStoryAction",
+      "section": "3.9.1",
+      "wellformed": true
+    },
+    {
+      "file": "roReqStoryAction.xml",
+      "message": "roReqStoryAction",
+      "section": "3.9.1",
+      "wellformed": true
+    },
+    {
+      "file": "roStorySend-2.illustrative.xml",
+      "message": "roStorySend",
+      "section": "3.8.1",
+      "wellformed": false,
+      "reason": "embeds a foreign <?xml?> declaration inside <mosPayload>"
+    },
+    {
+      "file": "roStorySend-3.illustrative.xml",
+      "message": "roStorySend",
+      "section": "5.3.7",
+      "wellformed": false,
+      "reason": "calibre export mangled an embedded file-path hyperlink; a clean equivalent example exists"
+    },
+    {
+      "file": "roStorySend.xml",
+      "message": "roStorySend",
+      "section": "3.8.1",
+      "wellformed": true
+    }
+  ]
+}
