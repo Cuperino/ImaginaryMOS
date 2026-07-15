@@ -9,6 +9,7 @@
 #include <utility>
 
 #include <imos/codec/legacy.h>
+#include <imos/framing/deframer.h>
 #include <imos/time_format.h>
 
 namespace imos {
@@ -421,6 +422,13 @@ void PeerSession::onFrameReceived(Channel channel, std::span<const std::uint8_t>
     }
     Result<codec::Message> parsed = codec::parseMessage(utf8.value(), config_.parseLimits);
     if (!parsed.ok()) {
+        // One MOS message per frame is the 4.0 rule, but a coalescing peer is
+        // tolerated with a diagnostic (plan §5.1): re-scan the frame for
+        // multiple <mos> documents before declaring it undecodable.
+        if (handleCoalescedFrame(channel, utf8.value())) {
+            announceDeadline();
+            return;
+        }
         SessionEvent event;
         event.type = SessionEventType::ProtocolError;
         event.channel = channel;
@@ -430,6 +438,36 @@ void PeerSession::onFrameReceived(Channel channel, std::span<const std::uint8_t>
     }
     handleInbound(channel, std::move(parsed).value());
     announceDeadline();
+}
+
+bool PeerSession::handleCoalescedFrame(Channel channel, std::string_view utf8) {
+    framing::DeframerOptions options;
+    options.encoding = encoding::WireEncoding::Utf8;
+    options.maxMessageBytes = config_.parseLimits.maxDocumentBytes;
+    framing::StreamDeframer deframer{options};
+    deframer.feed(std::span<const std::uint8_t>{reinterpret_cast<const std::uint8_t*>(utf8.data()),
+                                                utf8.size()});
+
+    std::vector<codec::Message> messages;
+    while (std::optional<framing::Frame> doc = deframer.next()) {
+        const std::string_view text{reinterpret_cast<const char*>(doc->document.data()),
+                                    doc->document.size()};
+        Result<codec::Message> parsed = codec::parseMessage(text, config_.parseLimits);
+        if (!parsed.ok()) {
+            return false;  // not a clean coalesced frame; report the original error
+        }
+        messages.push_back(std::move(parsed).value());
+    }
+    if (messages.size() < 2 || deframer.bufferedBytes() != 0 || deframer.totalDiscarded() != 0) {
+        return false;
+    }
+    logMessage(LogLevel::Warning,
+               "peer coalesced " + std::to_string(messages.size()) +
+                   " MOS messages into one frame (one message per frame is the 4.0 rule)");
+    for (codec::Message& message : messages) {
+        handleInbound(channel, std::move(message));
+    }
+    return true;
 }
 
 void PeerSession::onChannelConnected(Channel channel) {

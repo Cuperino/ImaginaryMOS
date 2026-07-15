@@ -8,10 +8,11 @@
 // retry on ack timeout with capped retries then link-fault escalation,
 // durable-before-send buffering through IMessageStore, and inbound
 // messageID duplicate suppression so peer retries stay idempotent. It also
-// runs the Profile 0 machinery this milestone needs: heartbeat echo with
-// loop avoidance and keepAlive emission on idle (never faster than the
-// spec's 30-second floor). Passive-mode reconnect policy and the resync
-// heuristic land in M2/M3; the ResyncNeeded event type is the seam.
+// runs the Profile 0 machinery: heartbeat echo with loop avoidance and
+// keepAlive emission on idle (never faster than the spec's 30-second
+// floor). Reconnect scheduling lives in ReconnectPolicy (session/reconnect.h),
+// driven by the transport's pump (M2). The resync heuristic lands in M3;
+// the ResyncNeeded event type is the seam.
 //
 // The session is sans-I/O: hosts push inbound frames and connectivity
 // changes in, poll() drives timers off the injected clock, and outbound
@@ -147,6 +148,9 @@ private:
     bool transmit(Channel channel, const PendingSend& send);
     void completeInFlight(Channel channel, codec::Message reply);
     void handleInbound(Channel channel, codec::Message message);
+    /// Split a frame carrying several <mos> documents (tolerated with a
+    /// diagnostic, plan §5.1); false if it is not cleanly coalesced.
+    bool handleCoalescedFrame(Channel channel, std::string_view utf8);
     void sendKeepAlive(Channel channel);
     void enqueueHeartbeatReply(Channel channel, const codec::Message& request);
     void applyEnvelopeDefaults(codec::Message& message);

@@ -1,10 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Javier O. Cordero Pérez
 # SPDX-License-Identifier: Apache-2.0
 #
-# M0 CI skeleton: a green build matrix across the six official targets
-# (build-only where the platform can't run our tests) plus lint and
-# fixtures-freshness gates. Deeper suites (fuzz, soak, coverage upload,
-# packaging) are added by later milestones.
+# CI matrix across the six official targets (build-only where the platform
+# can't run our tests) plus lint and fixtures-freshness gates. M2 additions:
+# the linux-tls job runs the wss certificate-policy suite, and the wasm job
+# drives the WASM P0 smoke under node against a native build. Deeper suites
+# (soak, coverage upload, packaging) are added by later milestones.
 
 name: CI
 
@@ -35,6 +36,7 @@ jobs:
           - { name: linux-gcc,   os: ubuntu-latest,  preset: linux,   cc: gcc,   cxx: g++ }
           - { name: linux-clang, os: ubuntu-latest,  preset: linux,   cc: clang, cxx: clang++ }
           - { name: linux-asan,  os: ubuntu-latest,  preset: linux-asan, cc: clang, cxx: clang++ }
+          - { name: linux-tls,   os: ubuntu-latest,  preset: linux-tls, cc: gcc,  cxx: g++ }
           - { name: macos,       os: macos-latest,   preset: macos }
           - { name: windows,     os: windows-latest, preset: windows }
     steps:
@@ -46,6 +48,9 @@ jobs:
       - name: Set up MSVC (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+      - name: Install OpenSSL headers (TLS build)
+        if: matrix.preset == 'linux-tls'
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev openssl
       - name: Select compiler
         if: matrix.cc != ''
         shell: bash
@@ -73,7 +78,7 @@ jobs:
           cmake --build --preset android
 
   build-wasm:
-    name: build wasm
+    name: wasm build + node P0 smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -82,10 +87,21 @@ jobs:
       - uses: mymindstorm/setup-emsdk@v14
         with:
           version: 4.0.7
-      - name: Configure + build
+      - name: Configure + build (wasm)
         run: |
           cmake --preset wasm
           cmake --build --preset wasm
+      - name: Configure + build (native host for the smoke server)
+        run: |
+          cmake --preset linux
+          cmake --build --preset linux
+      - name: WASM Profile 0 smoke under node (plan §13 M2 exit criteria)
+        # EMSDK is exported by setup-emsdk; the test finds the wasm artifact
+        # in build/wasm and a WebSocket-capable node (emsdk's bundled node
+        # via --experimental-websocket, or PATH node ≥ 22).
+        env:
+          IMOS_REQUIRE_WASM_SMOKE: "1"
+        run: ctest --preset linux -R Ws40Transport.WasmClientProfile0Smoke --output-on-failure
 
   build-ios:
     name: build ios
@@ -116,12 +132,16 @@ jobs:
         run: ctest --preset linux-fuzz
       - name: Extended run (nightly only)
         if: github.event_name == 'schedule'
+        # libFuzzer writes discoveries into the FIRST corpus dir, so a
+        # scratch dir comes first and the fixtures stay a read-only seed.
         run: |
           bin=build/linux-fuzz/bin
-          for f in imos_fuzz_xml_ingest imos_fuzz_deframer imos_fuzz_store_recovery; do
-            corpus=""
-            [ "$f" = imos_fuzz_xml_ingest ] && corpus=fixtures/spec-examples
-            "$bin/$f" -max_total_time=900 -max_len=65536 -print_final_stats=1 $corpus
+          for f in imos_fuzz_xml_ingest imos_fuzz_deframer imos_fuzz_store_recovery imos_fuzz_ws40_url; do
+            scratch="build/linux-fuzz/nightly-corpus/$f"
+            mkdir -p "$scratch"
+            seeds=""
+            [ "$f" = imos_fuzz_xml_ingest ] && seeds=fixtures/spec-examples
+            "$bin/$f" -max_total_time=900 -max_len=65536 -print_final_stats=1 "$scratch" $seeds
           done
 
   # --- Lint: formatting + fixtures freshness --------------------------

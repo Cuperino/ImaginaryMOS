@@ -437,3 +437,37 @@ TEST(PeerSession, NextDeadlineTracksRetryTimer) {
     ASSERT_TRUE(deadline.has_value());
     EXPECT_EQ(deadline->millis, h.clock.now().millis + 10'000);
 }
+
+TEST(PeerSession, CoalescedFrameIsToleratedWithBothMessagesDelivered) {
+    // One MOS message per WS message is the 4.0 rule; a peer that coalesces
+    // is tolerated with a diagnostic (plan §5.1).
+    Harness h;
+    h.connectAll();
+    const std::string doc1 =
+        "<mos><mosID>device.example.mos</mosID><ncsID>ncs.example.com</ncsID>"
+        "<messageID>71</messageID><roReadyToAir><roID>RO1</roID>"
+        "<roAir>READY</roAir></roReadyToAir></mos>";
+    const std::string doc2 =
+        "<mos><mosID>device.example.mos</mosID><ncsID>ncs.example.com</ncsID>"
+        "<messageID>72</messageID><roDelete><roID>RO2</roID></roDelete></mos>";
+    h.session->onFrameReceived(Channel::Ro, encodeXml(doc1 + doc2));
+
+    const auto events = h.drainEvents();
+    ASSERT_EQ(events.size(), 2U);
+    EXPECT_EQ(events[0].type, SessionEventType::MessageReceived);
+    EXPECT_EQ(events[0].message.type(), MessageType::RoReadyToAir);
+    EXPECT_EQ(events[1].type, SessionEventType::MessageReceived);
+    EXPECT_EQ(events[1].message.type(), MessageType::RoDelete);
+}
+
+TEST(PeerSession, CoalescedFrameWithTrailingGarbageStaysAProtocolError) {
+    Harness h;
+    h.connectAll();
+    const std::string doc =
+        "<mos><mosID>device.example.mos</mosID><ncsID>ncs.example.com</ncsID>"
+        "<messageID>73</messageID><roDelete><roID>RO3</roID></roDelete></mos>";
+    h.session->onFrameReceived(Channel::Ro, encodeXml(doc + "<mos><trailing-junk"));
+    const auto events = h.drainEvents();
+    ASSERT_EQ(events.size(), 1U);
+    EXPECT_EQ(events[0].type, SessionEventType::ProtocolError);
+}

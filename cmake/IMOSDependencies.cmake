@@ -55,6 +55,12 @@ else()
   target_include_directories(zlibstatic PUBLIC
     "$<BUILD_INTERFACE:${IMOS_3RDPARTY}/zlib>"
     "$<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/3rdparty/zlib>")
+  # zlib names its shared and static targets both "z"; on Emscripten shared
+  # libraries also produce .a archives, so the two rules would collide on
+  # lib/libz.a. We only ever link zlibstatic — rename the unused shared one.
+  if(TARGET zlib)
+    set_target_properties(zlib PROPERTIES OUTPUT_NAME z_shared)
+  endif()
   # Expose ZLIB::ZLIB so IXWebSocket's find_package(ZLIB) resolves to the pin.
   list(PREPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/shims")
 
@@ -82,6 +88,15 @@ else()
   # -- IXWebSocket ------------------------------------------------------
   _imos_require_submodule("${IMOS_3RDPARTY}/IXWebSocket" IXWebSocket)
   set(USE_TLS  ${IMOS_ENABLE_TLS} CACHE BOOL "" FORCE)
+  if(IMOS_ENABLE_TLS AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # TLS backend pinned per target (plan §5.1, decided at M2): OpenSSL on
+    # every platform where it is practical — Linux, Android, Windows, and
+    # macOS (IXWebSocket's CMake locates Homebrew/MacPorts OpenSSL) — so
+    # certificate handling behaves identically across targets. iOS keeps
+    # IXWebSocket's Secure Transport default: there is no system OpenSSL to
+    # link and cross-building one is not worth the divergence.
+    set(USE_OPEN_SSL ON CACHE BOOL "" FORCE)
+  endif()
   set(USE_ZLIB ON  CACHE BOOL "" FORCE)
   set(USE_WS   OFF CACHE BOOL "" FORCE)  # the `ws` CLI tool
   set(USE_TEST OFF CACHE BOOL "" FORCE)

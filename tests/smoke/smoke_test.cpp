@@ -41,7 +41,8 @@ TEST(Smoke, CAbi) {
 #if IMOS_HAVE_TRANSPORTS
 TEST(Smoke, TransportBackend) {
     EXPECT_TRUE(imos::transports::ixwebsocketAvailable());
-    // TLS is off until M2 enables it.
-    EXPECT_FALSE(imos::transports::tlsEnabled());
+    // The probe must report exactly what this build configured
+    // (IMOS_ENABLE_TLS → IXWebSocket USE_TLS; the linux-tls preset is ON).
+    EXPECT_EQ(imos::transports::tlsEnabled(), static_cast<bool>(IMOS_TLS_EXPECTED));
 }
 #endif

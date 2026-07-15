@@ -44,6 +44,12 @@
       "cacheVariables": { "IMOS_ENABLE_COVERAGE": "ON" }
     },
     {
+      "name": "linux-tls",
+      "displayName": "Linux with TLS (OpenSSL; wss tests)",
+      "inherits": "linux",
+      "cacheVariables": { "IMOS_ENABLE_TLS": "ON" }
+    },
+    {
       "name": "linux-fuzz",
       "displayName": "Linux fuzzers (Clang, libFuzzer + ASan/UBSan)",
       "inherits": "linux",
@@ -116,6 +122,7 @@
     { "name": "linux-asan", "configurePreset": "linux-asan" },
     { "name": "linux-tsan", "configurePreset": "linux-tsan" },
     { "name": "linux-coverage", "configurePreset": "linux-coverage" },
+    { "name": "linux-tls", "configurePreset": "linux-tls" },
     { "name": "linux-fuzz", "configurePreset": "linux-fuzz" },
     { "name": "macos", "configurePreset": "macos" },
     { "name": "windows", "configurePreset": "windows" },
@@ -135,6 +142,7 @@
     { "name": "linux-asan", "inherits": "base", "configurePreset": "linux-asan" },
     { "name": "linux-tsan", "inherits": "base", "configurePreset": "linux-tsan" },
     { "name": "linux-coverage", "inherits": "base", "configurePreset": "linux-coverage" },
+    { "name": "linux-tls", "inherits": "base", "configurePreset": "linux-tls" },
     { "name": "linux-fuzz", "inherits": "base", "configurePreset": "linux-fuzz" },
     { "name": "macos", "inherits": "base", "configurePreset": "macos" },
     { "name": "windows", "inherits": "base", "configurePreset": "windows" }

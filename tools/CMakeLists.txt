@@ -5,6 +5,18 @@
 # "fixtures verified against spec" gate and as a libxml2 integration smoke.
 # imos-cli, incs-sim and mos-sim arrive in later milestones.
 
+# WASM Profile 0 smoke client (plan §13 M2 exit: "P0 conformance … + WASM
+# client"). Built only on the wasm preset; the linux test suite runs it under
+# node (with WebSocket support) against a native Ws40Server.
+if(EMSCRIPTEN)
+  add_executable(imos-ws40-wasm-smoke ws40_wasm_smoke/main.cpp)
+  target_link_libraries(imos-ws40-wasm-smoke PRIVATE
+    imos::transports imos::core imos::warnings)
+  target_compile_features(imos-ws40-wasm-smoke PRIVATE cxx_std_20)
+  target_link_options(imos-ws40-wasm-smoke PRIVATE
+    "-lwebsocket.js" "-sEXIT_RUNTIME=1" "-sALLOW_MEMORY_GROWTH=1")
+endif()
+
 add_executable(imos-fixtures-verify fixtures_verify/main.cpp)
 target_link_libraries(imos-fixtures-verify PRIVATE LibXml2::LibXml2 imos::warnings)
 target_compile_features(imos-fixtures-verify PRIVATE cxx_std_20)

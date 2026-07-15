@@ -23,9 +23,13 @@ imos_add_library(core
     codec/gen/message_types.cpp
     encoding/encoding.cpp
     framing/deframer.cpp
+    profiles/profile0.cpp
     session/in_memory_store.cpp
     session/peer_session.cpp
+    session/reconnect.cpp
     session/time_format.cpp
+    ws40/basic_auth.cpp
+    ws40/url.cpp
   LINK_PRIVATE
     LibXml2::LibXml2
     ZLIB::ZLIB)

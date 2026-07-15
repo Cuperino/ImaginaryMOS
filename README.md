@@ -27,10 +27,13 @@ See the [implementation plan](reference/imaginarymos-implementation-plan.md) for
 the full design, and [docs/coding-standards.md](docs/coding-standards.md) for
 contribution rules.
 
-> **Status: Milestone M0 (Bootstrap).** The repository, build system, spec
-> fixtures, coding standards, and CI skeleton are in place and the build matrix
-> is green. Protocol code lands from M1 onward. The public API is not yet
-> stable.
+> **Status: Milestone M2 (4.0 transport + Profile 0).** The sans-I/O core
+> (codec for the full v4.0 vocabulary, encoding engine, session layer, file
+> store) and the MOS 4.0 WebSocket transports — IXWebSocket client/server with
+> Basic auth, TLS, permessage-deflate, standard & passive topologies, plus the
+> WebAssembly client — are implemented and tested, including Profile 0
+> end-to-end in both roles. Profiles 1+ land from M3 onward. The public API is
+> not yet stable.
 
 ## Requirements
 
@@ -42,6 +45,22 @@ contribution rules.
 Dependencies — IXWebSocket, libxml2, zlib (pinned submodules) and GoogleTest
 (FetchContent) — build from source by default. Pass `-DIMOS_USE_SYSTEM_DEPS=ON`
 to use system/vcpkg packages instead.
+
+Optional, depending on what you build and test:
+
+- **OpenSSL development headers** (e.g. Debian/Ubuntu `libssl-dev`) for TLS
+  (`wss`) support — `-DIMOS_ENABLE_TLS=ON` or the `linux-tls` preset; the TLS
+  test also uses the `openssl` CLI to generate its self-signed certificate.
+  Builds without it stay `ws`-only and the TLS tests skip themselves. The TLS
+  backend is pinned to OpenSSL on Linux, Android, Windows, and macOS
+  (Homebrew/MacPorts); iOS uses Secure Transport. Per the spec, self-signed
+  peer certificates are accepted by default, with
+  `TlsOptions::allowSelfSignedPeers = false` as the disable option.
+- **Emscripten 4.0.7** (`EMSDK` set) for the `wasm` preset.
+- **node** with WebSocket support for the WASM transport smoke test — node ≥ 22
+  out of the box, node 20/21 via `--experimental-websocket` (the test detects
+  the flag; the node bundled with emsdk works). The test skips itself when the
+  wasm build or node is unavailable.
 
 ## Building
 
@@ -55,8 +74,8 @@ ctest --preset linux                         # run the test suite
 
 Presets exist for each official target: `linux`, `macos`, `windows`, `android`,
 `ios`, `wasm` (plus `linux-release`, `linux-asan`, `linux-tsan`,
-`linux-coverage`). Cross-target presets expect the relevant toolchain
-(`ANDROID_NDK`, `EMSDK`, Xcode, …).
+`linux-coverage`, `linux-tls`, `linux-fuzz`). Cross-target presets expect the
+relevant toolchain (`ANDROID_NDK`, `EMSDK`, Xcode, …).
 
 Key options (see `cmake/IMOSOptions.cmake`): `IMOS_BUILD_SHARED`,
 `IMOS_BUILD_STATIC`, `IMOS_USE_SYSTEM_DEPS`, `IMOS_ENABLE_TLS`,
