@@ -298,8 +298,8 @@ Milestones are cumulative and each ends with its tests in CI. The user-visible n
 | **M1 — Core foundations** | Message model + codegen, codec for the full §3.2 vocabulary incl. legacy-13 parsing, encoding engine, framing (WS/TCP deframer spike), session skeleton, `IMessageStore` + file backend | Every spec example round-trips; store crash-recovery tests green; fuzzers running | 4–5 wk |
 | **M2 — 4.0 transport + Profile 0** | `ws40_ixws` client/server with TLS + auth + deflate, standard & passive topologies, `ws40_emscripten`, Profile 0 end-to-end both roles, threat model v1, §3.4 wire-encoding policy (UCS-2 default) exercised end-to-end | P0 conformance green on WS across desktop targets + WASM client; passive reconnect tests green | 3–4 wk |
 | **M3 — Profiles 1–2** | Object workflow, roConstruction family, `RunningOrderModel`, resync heuristic, `incs` RO authoring/diff | P1+P2 conformance green (in-memory + WS); store-backed resume test green | 4 wk |
-| **M4 — Profiles 3–4** | Search family, object create/action, `mosItemReplace`, `roStorySend` incl. `Read1stMEMasBody`, `roReqAll`/`roListAll` | P3+P4 conformance green; NewsML-payload preservation tests green | 3–4 wk |
-| **M5 — Profiles 5–7** | `roItemCue`/`roCtrl`, FQID utilities (P6), `roReqStoryAction` (P7) | P5–P7 conformance green; coverage gate ≥ 90 % core | 2–3 wk |
+| **M4 — Profiles 4, 5, 7** | `roReqAll`/`roListAll`, `roStorySend` incl. `Read1stMEMasBody`, `roItemCue`/`roCtrl` (P5), `roReqStoryAction` (P7) | P4+P5+P7 conformance green; NewsML-payload preservation tests green | ~4 wk |
+| **M5 — Profiles 6, 3** | FQID utilities (P6), search family, object create/action, `mosItemReplace` (P3) | P3+P6 conformance green; coverage gate ≥ 90 % core | ~3 wk |
 | **M6 — Legacy transports** | `imos_compat28` (TCP, UCS-2, legacy-13 normalization), `imos_ws3` (3.8.4 WSDL spike → SOAP transport), conformance suites re-run per transport | Full matrix green on 2.8 and 3.x (3.8.4) where applicable; 3.8.4 bindings pinned | 4–5 wk |
 | **M7 — Dialects, C ABI freeze, packaging** | Four `DialectProfile`s + delta suites, C ABI complete and frozen, packaging artifacts for all targets (XCFramework, AAR, DLL/zip, tarballs, wasm bundle), docs draft | ABI review signed off; install-and-link smoke tests from a clean consumer project on every target | 3–4 wk |
 | **M8 — Interoperability** | `incs-sim`/`mos-sim` feature-complete (personalities, fault injection, record/replay), OSS interop lab (mos-connection, mosromgr oracle, Superdesk), soak + extended fuzz | The §11 exit criteria, in full | 4 wk |
@@ -307,6 +307,8 @@ Milestones are cumulative and each ends with its tests in CI. The user-visible n
 | **M10 — GA 1.0** | Release, versioning/support policy, maintenance cadence (CVE SLA, dialect-quirk intake process) | Tagged 1.0; support policy published | 1 wk |
 
 Sequencing rationale: the 2.8 deframer and UCS-2 work get a *spike* in M1 even though the full compat module lands in M6, because stream deframing and encoding shape codec APIs and retrofitting them is expensive. The 4.0 WebSocket transport precedes profile breadth so every profile is developed against a real transport from M3 onward. Dialects precede M8 so interop runs with personalities from day one of that milestone.
+
+Within M3–M5 the profiles are implemented in the order **1, 2, 4, 5, 7, 6, 3** (decision of record, 2026-07-15; this is why M4/M5 are grouped as above rather than the draft's 3+4 / 5–7 split). Profile 3 — the search family plus object create/action, the largest independent object-side surface — is deliberately last; Profile 7 directly wraps Profile 4's `roStorySend` payloads, so it follows P4; Profiles 5 and 6 are comparatively small and slot between. Per-profile implementation plans live in `reference/profile<N>-plan.md` (N = 1…7); each states its prerequisites and its place in this sequence.
 
 ## 14. Risks and resolved questions
 
