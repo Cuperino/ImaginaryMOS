@@ -1,0 +1,9 @@
+# The tree is authored with LF endings. Normalize on commit and force LF in the
+# working tree on every platform (git auto-detects and leaves binaries alone).
+# This keeps the byte-exact spec fixtures under fixtures/ identical on Windows,
+# where core.autocrlf would otherwise rewrite them to CRLF and break the codec's
+# byte-clean round-trip tests (tests/codec/roundtrip_test.cpp).
+* text=auto eol=lf
+
+# Belt-and-suspenders: the fixtures are byte-exact test vectors — never convert.
+fixtures/** -text

@@ -52,6 +52,16 @@ function(imos_add_library COMPONENT)
     STATIC_DEFINE      ${ARG_EXPORT_BASE}_STATIC
     EXPORT_FILE_NAME   "${exphdr}")
 
+  # On MSVC a DLL's import library and a static library share the .lib suffix,
+  # so emitting both under one OUTPUT_NAME collides on <name>.lib. Suffix the
+  # static archive there (only when both libraries are built and the suffixes
+  # actually match — MinGW/Unix keep distinct extensions and need no rename).
+  set(_static_output_name "${ARG_OUTPUT_NAME}")
+  if(IMOS_BUILD_STATIC AND IMOS_BUILD_SHARED AND
+     CMAKE_STATIC_LIBRARY_SUFFIX STREQUAL CMAKE_IMPORT_LIBRARY_SUFFIX)
+    set(_static_output_name "${ARG_OUTPUT_NAME}_static")
+  endif()
+
   # Usage requirements shared by the object compile and both final libraries.
   set(_targets ${objlib})
   if(IMOS_BUILD_STATIC)
@@ -59,7 +69,7 @@ function(imos_add_library COMPONENT)
     add_library(imos::${COMPONENT}-static ALIAS ${COMPONENT}-static)
     target_compile_definitions(${COMPONENT}-static PUBLIC ${ARG_EXPORT_BASE}_STATIC)
     set_target_properties(${COMPONENT}-static PROPERTIES
-      OUTPUT_NAME ${ARG_OUTPUT_NAME} EXPORT_NAME ${COMPONENT}-static)
+      OUTPUT_NAME ${_static_output_name} EXPORT_NAME ${COMPONENT}-static)
     list(APPEND _targets ${COMPONENT}-static)
   endif()
   if(IMOS_BUILD_SHARED)

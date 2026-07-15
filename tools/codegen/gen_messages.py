@@ -457,7 +457,10 @@ def main() -> int:
     }
     for path, content in outputs.items():
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        # Force LF so output is byte-identical across platforms; on Windows the
+        # default text mode would translate \n -> \r\n and the codegen-verify
+        # byte comparison against the LF-committed files would fail.
+        path.write_text(content, encoding="utf-8", newline="\n")
         print(f"wrote {path}")
     return 0
 

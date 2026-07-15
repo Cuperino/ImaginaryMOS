@@ -315,7 +315,9 @@ TEST(Ws40Transport, BasicAuthAcceptAndReject) {
                     imos::ws40::BasicCredentials{"vtr7", "wrong"});
     ASSERT_TRUE(rig.waitFor([&] { return !rig.rejectedEvents.empty(); }));
     EXPECT_NE(rig.rejectedEvents[0].diagnostic.find("invalid credentials"), std::string::npos);
-    EXPECT_FALSE(rig.client->isConnected(Channel::Ro));
+    // The channel tears down asynchronously after the reject callback fires;
+    // poll rather than sampling the instant the event lands (races under ASan).
+    EXPECT_TRUE(rig.waitFor([&] { return !rig.client->isConnected(Channel::Ro); }));
     rig.client->stop();
 
     // Missing credentials: also rejected.

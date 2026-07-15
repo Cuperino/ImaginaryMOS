@@ -9,9 +9,10 @@ include_guard(GLOBAL)
 
 set(IMOS_3RDPARTY "${PROJECT_SOURCE_DIR}/3rdparty")
 
-# Some pinned dependencies (zlib 1.2.x) register their own CTest cases via
-# add_subdirectory (example / example64 / minigzip). Filter those out of our
-# test set while forwarding every first-party add_test() call unchanged.
+# Some pinned dependencies register their own CTest cases via add_subdirectory
+# (zlib's example / example64 / minigzip). We disable zlib's examples below, but
+# keep this filter as a defensive net that drops such cases while forwarding
+# every first-party add_test() call unchanged.
 macro(add_test)
   if("${ARGV0}" MATCHES "^(example|example64|minigzip|minigzip64)$")
     # vendored dependency self-test: skip
@@ -50,8 +51,9 @@ else()
   # -- zlib -------------------------------------------------------------
   _imos_require_submodule("${IMOS_3RDPARTY}/zlib" zlib)
   set(SKIP_INSTALL_ALL ON) # keep vendored zlib out of our install tree
+  set(ZLIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE) # no example/minigzip targets
   add_subdirectory("${IMOS_3RDPARTY}/zlib" EXCLUDE_FROM_ALL)
-  # The 1.2.x CMake build does not attach usage requirements to zlibstatic.
+  # The zlib CMake build does not attach usage requirements to zlibstatic.
   target_include_directories(zlibstatic PUBLIC
     "$<BUILD_INTERFACE:${IMOS_3RDPARTY}/zlib>"
     "$<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/3rdparty/zlib>")
