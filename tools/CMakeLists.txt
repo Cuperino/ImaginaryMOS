@@ -13,4 +13,17 @@ set_target_properties(imos-fixtures-verify PROPERTIES OUTPUT_NAME imos-fixtures-
 if(IMOS_BUILD_TESTS)
   add_test(NAME fixtures-verify
     COMMAND imos-fixtures-verify "${PROJECT_SOURCE_DIR}/fixtures")
+
+  # Generated-code freshness gate (plan §4.5): regenerating the message
+  # registry/views from the DTD + annotations must reproduce the checked-in
+  # files exactly. Mirrors the fixtures-freshness gate in CI.
+  find_package(Python3 COMPONENTS Interpreter)
+  if(Python3_FOUND)
+    add_test(NAME codegen-verify
+      COMMAND ${CMAKE_COMMAND}
+        -DPYTHON=${Python3_EXECUTABLE}
+        -DSOURCE_DIR=${PROJECT_SOURCE_DIR}
+        -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/codegen-verify
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/codegen/verify.cmake)
+  endif()
 endif()

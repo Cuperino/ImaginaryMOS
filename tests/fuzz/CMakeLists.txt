@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: 2026 Javier O. Cordero Pérez
+# SPDX-License-Identifier: Apache-2.0
+#
+# libFuzzer harnesses for the M1 parsing surfaces (plan §10): XML message
+# ingest, the 2.8 stream deframer, and store journal recovery. Clang-only
+# (-fsanitize=fuzzer); the linux-fuzz preset builds them with ASan+UBSan.
+# Each harness gets a short deterministic smoke run in CTest so "fuzzers
+# running" is continuously true; nightly CI runs them longer.
+
+if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  message(FATAL_ERROR "IMOS_BUILD_FUZZERS requires Clang (libFuzzer); use the "
+                      "linux-fuzz preset")
+endif()
+
+set(IMOS_FUZZ_FLAGS -fsanitize=fuzzer)
+
+function(imos_add_fuzzer NAME)
+  cmake_parse_arguments(ARG "" "" "SOURCES;LINK;SMOKE_ARGS" ${ARGN})
+  add_executable(${NAME} ${ARG_SOURCES})
+  target_link_libraries(${NAME} PRIVATE ${ARG_LINK} imos::warnings)
+  target_compile_features(${NAME} PRIVATE cxx_std_20)
+  target_compile_options(${NAME} PRIVATE ${IMOS_FUZZ_FLAGS})
+  target_link_options(${NAME} PRIVATE ${IMOS_FUZZ_FLAGS})
+  add_test(NAME fuzz-smoke-${NAME}
+    COMMAND ${NAME} -runs=256 -max_len=4096 -seed=20260714 ${ARG_SMOKE_ARGS})
+endfunction()
+
+# Static link avoids mixing sanitizer runtimes into the shared libraries.
+imos_add_fuzzer(imos_fuzz_xml_ingest
+  SOURCES fuzz_xml_ingest.cpp
+  LINK imos::core-static
+  SMOKE_ARGS "${PROJECT_SOURCE_DIR}/fixtures/spec-examples")
+
+imos_add_fuzzer(imos_fuzz_deframer
+  SOURCES fuzz_deframer.cpp
+  LINK imos::core-static)
+
+imos_add_fuzzer(imos_fuzz_store_recovery
+  SOURCES fuzz_store_recovery.cpp
+  LINK imos::store_file-static imos::core-static)

@@ -44,6 +44,18 @@
       "cacheVariables": { "IMOS_ENABLE_COVERAGE": "ON" }
     },
     {
+      "name": "linux-fuzz",
+      "displayName": "Linux fuzzers (Clang, libFuzzer + ASan/UBSan)",
+      "inherits": "linux",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "IMOS_BUILD_FUZZERS": "ON",
+        "IMOS_ENABLE_ASAN": "ON",
+        "IMOS_BUILD_SHARED": "OFF"
+      }
+    },
+    {
       "name": "macos",
       "displayName": "macOS (Apple Clang, arm64/x86_64)",
       "inherits": "base",
@@ -104,6 +116,7 @@
     { "name": "linux-asan", "configurePreset": "linux-asan" },
     { "name": "linux-tsan", "configurePreset": "linux-tsan" },
     { "name": "linux-coverage", "configurePreset": "linux-coverage" },
+    { "name": "linux-fuzz", "configurePreset": "linux-fuzz" },
     { "name": "macos", "configurePreset": "macos" },
     { "name": "windows", "configurePreset": "windows" },
     { "name": "android", "configurePreset": "android" },
@@ -122,6 +135,7 @@
     { "name": "linux-asan", "inherits": "base", "configurePreset": "linux-asan" },
     { "name": "linux-tsan", "inherits": "base", "configurePreset": "linux-tsan" },
     { "name": "linux-coverage", "inherits": "base", "configurePreset": "linux-coverage" },
+    { "name": "linux-fuzz", "inherits": "base", "configurePreset": "linux-fuzz" },
     { "name": "macos", "inherits": "base", "configurePreset": "macos" },
     { "name": "windows", "inherits": "base", "configurePreset": "windows" }
   ]

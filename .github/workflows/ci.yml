@@ -13,6 +13,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    - cron: "17 2 * * *"  # nightly extended fuzzing (plan §10)
 
 permissions:
   contents: read
@@ -97,6 +99,31 @@ jobs:
           cmake --preset ios
           cmake --build --preset ios
 
+  # --- Fuzzers: smoke on PRs, extended nightly (plan §10) --------------
+  fuzz:
+    name: fuzz ${{ github.event_name == 'schedule' && '(nightly)' || '(smoke)' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: lukka/get-cmake@latest
+      - name: Configure + build
+        run: |
+          cmake --preset linux-fuzz
+          cmake --build --preset linux-fuzz
+      - name: Smoke (ctest fuzz targets + unit suites under ASan)
+        run: ctest --preset linux-fuzz
+      - name: Extended run (nightly only)
+        if: github.event_name == 'schedule'
+        run: |
+          bin=build/linux-fuzz/bin
+          for f in imos_fuzz_xml_ingest imos_fuzz_deframer imos_fuzz_store_recovery; do
+            corpus=""
+            [ "$f" = imos_fuzz_xml_ingest ] && corpus=fixtures/spec-examples
+            "$bin/$f" -max_total_time=900 -max_len=65536 -print_final_stats=1 $corpus
+          done
+
   # --- Lint: formatting + fixtures freshness --------------------------
   lint:
     name: lint
@@ -108,9 +135,15 @@ jobs:
         run: pipx install "clang-format~=21.1"
       - name: Check formatting
         run: |
-          files=$(find core imos incs capi transports tools tests -type f \
-            \( -name '*.cpp' -o -name '*.h' \))
+          files=$(find core imos incs capi store transports tools tests -type f \
+            \( -name '*.cpp' -o -name '*.h' \) -not -path '*/gen/*')
           clang-format --dry-run --Werror $files
+      - name: Check generated code is up to date with the schemas
+        run: |
+          python3 tools/codegen/gen_messages.py fixtures/schema/mos4.dtd \
+            tools/codegen/annotations.json core
+          git diff --exit-code -- core \
+            || { echo "::error::generated code is stale; rerun tools/codegen/gen_messages.py"; exit 1; }
       - name: Check fixtures are up to date with the spec
         run: |
           python3 tools/extract_fixtures.py "reference/MOS Protocol 4.0 (Current).html" fixtures

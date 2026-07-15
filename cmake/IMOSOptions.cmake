@@ -25,6 +25,8 @@ option(IMOS_BUILD_TESTS "Build the test suite (GoogleTest)" ${IMOS_IS_TOP_LEVEL}
 option(IMOS_BUILD_TOOLS "Build the tools (fixtures-verify, imos-cli, …)" ${IMOS_IS_TOP_LEVEL})
 option(IMOS_INSTALL     "Generate install/export rules" ${IMOS_IS_TOP_LEVEL})
 
+option(IMOS_BUILD_FUZZERS "Build the libFuzzer harnesses (Clang only, M1+)" OFF)
+
 option(IMOS_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(IMOS_ENABLE_ASAN "Build with AddressSanitizer + UBSan" OFF)
 option(IMOS_ENABLE_TSAN "Build with ThreadSanitizer" OFF)

@@ -43,6 +43,7 @@ include(IMOSDependencies)
 
 # ---- first-party libraries -------------------------------------------
 add_subdirectory(core)
+add_subdirectory(store)
 add_subdirectory(imos)
 add_subdirectory(incs)
 add_subdirectory(capi)
