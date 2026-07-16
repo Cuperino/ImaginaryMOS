@@ -35,6 +35,7 @@ add_executable(imos_core_test
   encoding/encoding_test.cpp
   framing/deframer_test.cpp
   profiles/profile0_test.cpp
+  profiles/running_order_model_test.cpp
   session/reconnect_test.cpp
   session/session_test.cpp
   ws40/url_test.cpp)
@@ -65,7 +66,9 @@ if(TARGET imos::transports AND NOT EMSCRIPTEN)
 endif()
 
 # ---- profile conformance suites (real imos vs real incs, plan §10) ----
-add_executable(imos_profile_test profiles/profile1_test.cpp)
+add_executable(imos_profile_test
+  profiles/profile1_test.cpp
+  profiles/profile2_test.cpp)
 target_link_libraries(imos_profile_test PRIVATE
   GTest::gtest_main
   imos::core

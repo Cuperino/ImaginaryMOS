@@ -11,8 +11,9 @@
 // runs the Profile 0 machinery: heartbeat echo with loop avoidance and
 // keepAlive emission on idle (never faster than the spec's 30-second
 // floor). Reconnect scheduling lives in ReconnectPolicy (session/reconnect.h),
-// driven by the transport's pump (M2). The resync heuristic lands in M3;
-// the ResyncNeeded event type is the seam.
+// driven by the transport's pump (M2). The §3.3 resync heuristic itself
+// lives in the profile layer (profiles/profile2.h) — only it knows the IDs —
+// and announces itself through postEvent() as a ResyncNeeded event.
 //
 // The session is sans-I/O: hosts push inbound frames and connectivity
 // changes in, poll() drives timers off the injected clock, and outbound
@@ -66,7 +67,7 @@ enum class SessionEventType : std::uint8_t {
     DuplicateSuppressed,  ///< peer retry absorbed; not re-delivered
     ProtocolError,        ///< undecodable/unparseable/mismatched inbound
     StoreError,           ///< IMessageStore failure (session continues volatile)
-    ResyncNeeded,         ///< placeholder seam for the §3.3 resync heuristic
+    ResyncNeeded,         ///< §3.3 resync started (posted by the profile layer)
 };
 
 struct SessionEvent {
@@ -107,6 +108,12 @@ public:
     /// terminal-reply seam every profile responder uses (plan §3.3).
     Result<Seq> enqueueReply(Channel channel, codec::Message message);
 
+    /// Profile-layer seam (§3.3): post an application-visible event through
+    /// the session's queue — e.g. the Profile 2 resync driver announcing
+    /// SessionEventType::ResyncNeeded. The session itself stays
+    /// message-agnostic about what triggered it.
+    void postEvent(SessionEvent event) { pushEvent(std::move(event)); }
+
     void onChannelConnected(Channel channel);
     void onChannelDisconnected(Channel channel);
     void onFrameReceived(Channel channel, std::span<const std::uint8_t> frame);
@@ -130,6 +137,7 @@ private:
         std::vector<std::uint8_t> wire;
         codec::MessageType type = codec::MessageType::Unknown;
         bool awaitReply = false;
+        bool isReply = false;  ///< completes the peer's exchange; never blocked
         bool sentOnce = false;
     };
     struct ChannelState {

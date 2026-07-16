@@ -217,6 +217,9 @@ bool ObjectDirectory::handle(const SessionEvent& event) {
                     return false;
             }
         case SessionEventType::AckReceived: {
+            if (event.channel != Channel::Mom) {
+                return false;  // store seqs are per-channel; ours are all mom
+            }
             const auto it = outstanding_.find(event.seq);
             if (it == outstanding_.end()) {
                 return false;

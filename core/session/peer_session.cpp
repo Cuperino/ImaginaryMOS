@@ -194,6 +194,7 @@ Result<Seq> PeerSession::enqueueInternal(Channel channel, codec::Message message
     PendingSend send;
     send.type = message.type();
     send.awaitReply = !isReply && !info.responses.empty();
+    send.isReply = isReply;
     if (const std::optional<std::string_view> id = message.messageID()) {
         send.messageId = *id;
     }
@@ -261,13 +262,36 @@ void PeerSession::trySend(Channel channel) {
             ch.retriesLeft = config_.maxRetries;
             ch.retryDeadline =
                 deps_.clock->now() + config_.retryTimeoutMillis + retryJitterMillis();
-            return;
+            break;
         }
         // Fire-and-forget traffic (acks, list replies): durable until sent.
         if (ch.storeOpen && front.seq != 0) {
             (void)deps_.store->markAcked(ch.stream, front.seq);
         }
         ch.queue.pop_front();
+    }
+
+    // Replies never wait behind our own in-flight request: the in-flight-of-
+    // one rule governs messages we initiate, but the peer's exchange must
+    // still complete — otherwise two crossing requests on one channel (e.g.
+    // an NCS mid-commit while the device issues a resync roReq) deadlock,
+    // each side holding the other's reply behind its blocked queue.
+    if (!ch.connected || ch.faulted || !ch.awaitingAck) {
+        return;
+    }
+    for (std::size_t i = 1; i < ch.queue.size();) {
+        PendingSend& send = ch.queue[i];
+        if (!send.isReply) {
+            ++i;
+            continue;
+        }
+        if (!transmit(channel, send)) {
+            return;
+        }
+        if (ch.storeOpen && send.seq != 0) {
+            (void)deps_.store->markAcked(ch.stream, send.seq);
+        }
+        ch.queue.erase(ch.queue.begin() + static_cast<std::ptrdiff_t>(i));
     }
 }
 
@@ -489,9 +513,8 @@ void PeerSession::onChannelConnected(Channel channel) {
             ch.retryDeadline =
                 deps_.clock->now() + config_.retryTimeoutMillis + retryJitterMillis();
         }
-    } else {
-        trySend(channel);
     }
+    trySend(channel);  // resumes the queue; flushes replies past an in-flight
     announceDeadline();
 }
 

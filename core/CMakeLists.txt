@@ -25,6 +25,8 @@ imos_add_library(core
     framing/deframer.cpp
     profiles/profile0.cpp
     profiles/profile1.cpp
+    profiles/profile2.cpp
+    profiles/running_order_model.cpp
     session/in_memory_store.cpp
     session/peer_session.cpp
     session/reconnect.cpp

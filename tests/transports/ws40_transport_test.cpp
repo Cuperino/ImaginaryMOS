@@ -569,6 +569,113 @@ TEST(Ws40Transport, Profile1ObjectWorkflowOverWebSocket) {
     client.stop();
 }
 
+// ---- Profile 2 running-order workflow over the real WebSocket transport ----
+//
+// The authoring/diff walk re-run on real sockets on the ro channel: author →
+// commit → the device's RunningOrderModel converges, a mutation converges
+// after its ack round, and a device status report reaches the NCS. Resync,
+// diff-quality, and failure branches stay in the fake-clock unit suite.
+
+TEST(Ws40Transport, Profile2RunningOrderWorkflowOverWebSocket) {
+    SystemClock clock;
+    imos::InMemoryMessageStore deviceStore;
+    imos::InMemoryMessageStore ncsStore;
+
+    ServerConfig serverConfig;
+    serverConfig.host = "127.0.0.1";
+    serverConfig.port = ix::getFreePort();
+    Ws40Server server{serverConfig};
+    ServerPeerConfig peer;
+    peer.mosID = kMosID;
+    peer.ncsID = kNcsID;
+    ASSERT_TRUE(server.addPeer(peer).ok());
+    ASSERT_TRUE(server.start().ok());
+    incs::Ncs ncs{
+        {sessionConfig(), machineInfo(DeviceType::Ncs)},
+        PeerSession::Dependencies{&clock, &server.transportFor(kMosID, kNcsID), &ncsStore}};
+
+    ClientConfig clientConfig;
+    clientConfig.endpointUrl =
+        "ws://127.0.0.1:" + std::to_string(serverConfig.port) + "/mos/Communication";
+    clientConfig.mosID = kMosID;
+    clientConfig.ncsID = kNcsID;
+    clientConfig.channels = {Channel::Ro};
+    Ws40Client client{clientConfig, &clock};
+    imos::Device device{{sessionConfig(), machineInfo(DeviceType::Mos)},
+                        PeerSession::Dependencies{&clock, &client, &deviceStore}};
+    ASSERT_TRUE(client.start().ok());
+
+    std::vector<imos::profiles::ElementStatusReport> statuses;
+    const auto pump = [&] {
+        client.pump(device.session());
+        device.poll();
+        while (auto event = server.nextEvent()) {
+            switch (event->kind) {
+                case ServerEvent::Kind::ChannelConnected:
+                    ncs.onChannelConnected(event->channel);
+                    break;
+                case ServerEvent::Kind::ChannelDisconnected:
+                    ncs.onChannelDisconnected(event->channel);
+                    break;
+                case ServerEvent::Kind::Frame:
+                    ncs.onFrameReceived(event->channel, event->frame);
+                    break;
+                default:
+                    break;
+            }
+        }
+        ncs.poll();
+        while (auto status = ncs.nextElementStatus()) {
+            statuses.push_back(std::move(*status));
+        }
+    };
+    const auto waitFor = [&](const std::function<bool()>& predicate) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{5000};
+        while (std::chrono::steady_clock::now() < deadline) {
+            pump();
+            if (predicate()) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        }
+        return false;
+    };
+
+    ASSERT_TRUE(waitFor([&] { return client.isConnected(Channel::Ro); }));
+
+    // Author and commit; the device's shadow model converges over the wire.
+    ASSERT_TRUE(ncs.author().create("WS-RO", "WS Rundown").ok());
+    imos::codec::XmlNode story = incs::RunningOrderAuthor::makeStory("s1", "Lead");
+    story.children.push_back(incs::RunningOrderAuthor::makeItem("i1", "OBJ1", kMosID));
+    ASSERT_TRUE(ncs.author().insertStory("WS-RO", story).ok());
+    ASSERT_TRUE(ncs.author().insertStory("WS-RO", incs::RunningOrderAuthor::makeStory("s2")).ok());
+    ASSERT_TRUE(ncs.author().commit("WS-RO").ok());
+    ASSERT_TRUE(waitFor([&] {
+        return device.runningOrderModel().storyIDs("WS-RO") == std::vector<std::string>{"s1", "s2"};
+    }));
+
+    // A mutation converges after its ack round.
+    ASSERT_TRUE(ncs.author().moveStory("WS-RO", "s2", "s1").ok());
+    ASSERT_TRUE(ncs.author().commit("WS-RO").ok());
+    ASSERT_TRUE(waitFor([&] {
+        return device.runningOrderModel().storyIDs("WS-RO") == std::vector<std::string>{"s2", "s1"};
+    }));
+
+    // Device-originated roElementStat reaches the NCS.
+    imos::profiles::ElementStatusReport play;
+    play.element = imos::profiles::RoElement::Item;
+    play.roID = "WS-RO";
+    play.storyID = "s1";
+    play.itemID = "i1";
+    play.status = "PLAY";
+    ASSERT_TRUE(device.reportElementStatus(play).ok());
+    ASSERT_TRUE(waitFor([&] { return !statuses.empty(); }));
+    EXPECT_EQ(statuses.front().status, "PLAY");
+    EXPECT_EQ(statuses.front().itemID, "i1");
+
+    client.stop();
+}
+
 // ---- WASM client smoke (plan §13 M2: "P0 conformance … + WASM client") ----
 //
 // Runs the Ws40EmscriptenClient (built by the wasm preset as

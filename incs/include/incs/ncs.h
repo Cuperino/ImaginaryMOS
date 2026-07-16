@@ -3,13 +3,15 @@
 //
 // incs::Ncs — the Newsroom Computer System (NCS) role facade (plan §4.6). The
 // mirror of imos::Device over the same sans-I/O core: it owns one PeerSession
-// for the configured peer plus the Profile 0 machine-info responder and the
+// for the configured peer plus the Profile 0 machine-info responder, the
 // Profile 1 ObjectDirectory (the NCS's mirror of the peer's object catalog),
-// and dispatches inbound session events through them. Powers the NRCS
-// simulator used for M8 interop. Driven pull-mode; no library-owned threads.
+// and the Profile 2 running-order authoring/diff API with its responder
+// (roReq answers, roElementStat ingest), and dispatches inbound session
+// events through them. Powers the NRCS simulator used for M8 interop.
+// Driven pull-mode; no library-owned threads.
 //
-// M3 grows the former version-stub into real code; the RO authoring API and
-// object search land in later milestones without changing this shape.
+// M3 grows the former version-stub into real code; object search lands in a
+// later milestone without changing this shape.
 
 #pragma once
 
@@ -23,8 +25,10 @@
 #include <imos/codec/message.h>
 #include <imos/profiles/profile0.h>
 #include <imos/profiles/profile1.h>
+#include <imos/profiles/profile2.h>
 #include <imos/session/peer_session.h>
 #include <incs/incs_export.h>
+#include <incs/running_order_author.h>
 
 namespace incs {
 
@@ -61,6 +65,21 @@ public:
     /// Next high-level directory change (ingest/delete/miss/sync-start).
     [[nodiscard]] std::optional<imos::profiles::DirectoryEvent> nextEvent();
 
+    // Profile 2 running orders.
+
+    /// The running-order authoring and diff API: edit the desired state,
+    /// then author().commit(roID) to enqueue the minimal message sequence;
+    /// drain author().nextEvent() for per-message roAck outcomes.
+    [[nodiscard]] RunningOrderAuthor& author() noexcept { return author_; }
+    [[nodiscard]] const RunningOrderAuthor& author() const noexcept { return author_; }
+
+    /// Originate an NCS-side roElementStat (2.8.5+; flows into the device's
+    /// model). <time> is stamped from the injected clock.
+    imos::Result<imos::Seq> sendElementStat(const imos::profiles::ElementStatusReport& report);
+
+    /// Next ingested device-originated roElementStat, in arrival order.
+    [[nodiscard]] std::optional<imos::profiles::ElementStatusReport> nextElementStatus();
+
     /// Direct session access for host transport glue (e.g. pump()).
     [[nodiscard]] imos::PeerSession& session() noexcept { return session_; }
 
@@ -70,6 +89,8 @@ private:
     imos::PeerSession session_;
     imos::profiles::Profile0Responder profile0_;
     imos::profiles::ObjectDirectory directory_;
+    RunningOrderAuthor author_;
+    imos::profiles::Profile2NcsResponder profile2_;
     std::deque<imos::SessionEvent> appEvents_;
 };
 

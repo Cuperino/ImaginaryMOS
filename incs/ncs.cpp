@@ -19,7 +19,11 @@ imos::profiles::MachineInfo asNcs(imos::profiles::MachineInfo info) {
 Ncs::Ncs(NcsConfig config, imos::PeerSession::Dependencies deps)
     : session_(std::move(config.session), deps),
       profile0_(asNcs(std::move(config.machineInfo)), &session_, deps.clock),
-      directory_(&session_, deps.clock) {}
+      directory_(&session_, deps.clock),
+      author_(&session_),
+      profile2_(&session_, deps.clock) {
+    profile2_.setSource(&author_);  // roReq is answered from the authoring store
+}
 
 void Ncs::onChannelConnected(imos::Channel channel) {
     session_.onChannelConnected(channel);
@@ -68,9 +72,20 @@ std::optional<imos::profiles::DirectoryEvent> Ncs::nextEvent() {
     return directory_.nextEvent();
 }
 
+imos::Result<imos::Seq> Ncs::sendElementStat(const imos::profiles::ElementStatusReport& report) {
+    imos::Result<imos::Seq> seq = profile2_.sendElementStat(report);
+    dispatch();
+    return seq;
+}
+
+std::optional<imos::profiles::ElementStatusReport> Ncs::nextElementStatus() {
+    return profile2_.nextStatus();
+}
+
 void Ncs::dispatch() {
     while (std::optional<imos::SessionEvent> event = session_.nextEvent()) {
-        if (profile0_.handle(*event) || directory_.handle(*event)) {
+        if (profile0_.handle(*event) || directory_.handle(*event) || author_.handle(*event) ||
+            profile2_.handle(*event)) {
             continue;
         }
         appEvents_.push_back(std::move(*event));
