@@ -429,6 +429,29 @@ TEST(PeerSession, UndecodableFrameSurfacesProtocolError) {
     EXPECT_NE(events[0].diagnostic.find("misconfigured"), std::string::npos);
 }
 
+TEST(PeerSession, EnqueueReplyIsTerminalAndDoesNotAwaitAck) {
+    // A response that completes the peer's exchange (e.g. a mosObj answering a
+    // mosReqObj) is sent in sequence but never holds the channel awaiting an
+    // ack of its own — the requester correlates it by the echoed messageID.
+    Harness h;
+    h.connectAll();
+
+    Message reply = makeMosObj("R1");
+    reply.setMessageID("654");  // echo the request's messageID
+    ASSERT_TRUE(h.session->enqueueReply(Channel::Mom, std::move(reply)).ok());
+
+    ASSERT_EQ(h.momFrames().size(), 1U);
+    EXPECT_EQ(parseFrame(h.momFrames()[0]).messageID().value_or(""), "654");
+    EXPECT_TRUE(h.session->channelIdle(Channel::Mom));  // no phantom in-flight
+    EXPECT_TRUE(h.drainEvents().empty());
+
+    // The channel was left free, so ordinary sequenced traffic flows straight
+    // out behind the reply (contrast: this one awaits its own ack).
+    ASSERT_TRUE(h.session->enqueue(makeMosObj("N1")).ok());
+    EXPECT_EQ(h.momFrames().size(), 2U);
+    EXPECT_FALSE(h.session->channelIdle(Channel::Mom));
+}
+
 TEST(PeerSession, NextDeadlineTracksRetryTimer) {
     Harness h;
     h.connectAll();

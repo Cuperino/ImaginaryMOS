@@ -172,6 +172,10 @@ Result<Seq> PeerSession::enqueue(Channel channel, codec::Message message) {
     return enqueueInternal(channel, std::move(message), false);
 }
 
+Result<Seq> PeerSession::enqueueReply(Channel channel, codec::Message message) {
+    return enqueueInternal(channel, std::move(message), /*isReply=*/true);
+}
+
 Result<Seq> PeerSession::enqueueInternal(Channel channel, codec::Message message, bool isReply) {
     const codec::MessageInfo& info = message.info();
     if (info.legacyRemoved) {

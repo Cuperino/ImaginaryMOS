@@ -54,6 +54,8 @@ if(TARGET imos::transports AND NOT EMSCRIPTEN)
     GTest::gtest_main
     imos::transports
     imos::core
+    imos::imos
+    imos::incs
     ixwebsocket::ixwebsocket   # ix::getFreePort in the test rig
     imos::warnings)
   target_compile_features(imos_transport_test PRIVATE cxx_std_20)
@@ -61,6 +63,21 @@ if(TARGET imos::transports AND NOT EMSCRIPTEN)
     IMOS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
   gtest_discover_tests(imos_transport_test DISCOVERY_TIMEOUT 30 PROPERTIES TIMEOUT 60)
 endif()
+
+# ---- profile conformance suites (real imos vs real incs, plan §10) ----
+add_executable(imos_profile_test profiles/profile1_test.cpp)
+target_link_libraries(imos_profile_test PRIVATE
+  GTest::gtest_main
+  imos::core
+  imos::imos
+  imos::incs
+  imos::store_file
+  imos::warnings)
+target_compile_features(imos_profile_test PRIVATE cxx_std_20)
+target_include_directories(imos_profile_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support)
+target_compile_definitions(imos_profile_test PRIVATE
+  IMOS_FIXTURES_DIR="${PROJECT_SOURCE_DIR}/fixtures")
+gtest_discover_tests(imos_profile_test DISCOVERY_TIMEOUT 30)
 
 add_executable(imos_store_test store/file_store_test.cpp)
 target_link_libraries(imos_store_test PRIVATE

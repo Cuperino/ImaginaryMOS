@@ -10,5 +10,6 @@ imos_add_library(incs
   EXPORT_SUBDIR incs
   SOURCES
     incs.cpp
+    ncs.cpp
   LINK_PUBLIC
     imos::core)

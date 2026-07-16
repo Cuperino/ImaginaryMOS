@@ -14,7 +14,9 @@
 #include <cstdlib>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -23,11 +25,15 @@
 
 #include <ixwebsocket/IXGetFreePort.h>
 
+#include <imos/codec/gen/views.h>
 #include <imos/codec/message.h>
+#include <imos/device.h>
 #include <imos/profiles/profile0.h>
+#include <imos/profiles/profile1.h>
 #include <imos/session/in_memory_store.h>
 #include <imos/session/peer_session.h>
 #include <imos/transports/ws40.h>
+#include <incs/ncs.h>
 
 using imos::Channel;
 using imos::MonotonicTime;
@@ -418,6 +424,149 @@ TEST(Ws40Transport, PassiveTopologyServerOriginatesAndClientReconnects) {
     ASSERT_TRUE(rig.ncsSession->enqueue(Channel::Ro, makeReqMachInfo()).ok());
     ASSERT_TRUE(
         rig.waitFor([&] { return findAck(rig.ncsEvents, MessageType::ListMachInfo) != nullptr; }));
+}
+
+// ---- Profile 1 object workflow over the real WebSocket transport ----------
+//
+// The imos::Device / incs::Ncs facades (Profile 0 + Profile 1) driven over a
+// live loopback WebSocket: unsolicited push, single-object fetch (hit and NACK
+// miss), and full-catalog batch sync — the plan §10 conformance walk re-run on
+// real sockets (paced timing stays in the fake-clock unit suite).
+
+namespace {
+
+class VectorObjectSource : public imos::profiles::IObjectSource {
+public:
+    std::optional<Message> object(std::string_view objID) override {
+        const auto it = objects_.find(std::string{objID});
+        return it == objects_.end() ? std::nullopt : std::optional<Message>{it->second};
+    }
+    std::vector<std::string> objectIDs() override {
+        std::vector<std::string> ids;
+        for (const auto& [id, message] : objects_) {
+            ids.push_back(id);
+        }
+        return ids;
+    }
+    void put(const std::string& id, Message message) {
+        objects_.insert_or_assign(id, std::move(message));
+    }
+
+private:
+    std::map<std::string, Message> objects_;
+};
+
+Message makeObject(std::string_view objID, std::string_view status) {
+    Message message = makeMessage(MessageType::MosObj);
+    imos::codec::view::MosObj view{*message.body()};
+    view.setObjID(objID);
+    view.setObjSlug("clip");
+    view.setObjType("VIDEO");
+    view.setStatus(status);
+    return message;
+}
+
+}  // namespace
+
+TEST(Ws40Transport, Profile1ObjectWorkflowOverWebSocket) {
+    SystemClock clock;
+    imos::InMemoryMessageStore deviceStore;
+    imos::InMemoryMessageStore ncsStore;
+
+    // NCS role on the server side.
+    ServerConfig serverConfig;
+    serverConfig.host = "127.0.0.1";
+    serverConfig.port = ix::getFreePort();
+    Ws40Server server{serverConfig};
+    ServerPeerConfig peer;
+    peer.mosID = kMosID;
+    peer.ncsID = kNcsID;
+    ASSERT_TRUE(server.addPeer(peer).ok());
+    ASSERT_TRUE(server.start().ok());
+    incs::Ncs ncs{
+        {sessionConfig(), machineInfo(DeviceType::Ncs)},
+        PeerSession::Dependencies{&clock, &server.transportFor(kMosID, kNcsID), &ncsStore}};
+
+    // Device role on the client side, with a small object catalog.
+    ClientConfig clientConfig;
+    clientConfig.endpointUrl =
+        "ws://127.0.0.1:" + std::to_string(serverConfig.port) + "/mos/Communication";
+    clientConfig.mosID = kMosID;
+    clientConfig.ncsID = kNcsID;
+    clientConfig.channels = {Channel::Mom};
+    Ws40Client client{clientConfig, &clock};
+    imos::Device device{{sessionConfig(), machineInfo(DeviceType::Mos)},
+                        PeerSession::Dependencies{&clock, &client, &deviceStore}};
+    VectorObjectSource source;
+    source.put("W2", makeObject("W2", "UPDATED"));
+    source.put("W3", makeObject("W3", "UPDATED"));
+    device.attach(source);
+    ASSERT_TRUE(client.start().ok());
+
+    std::vector<imos::profiles::DirectoryEvent> dirEvents;
+    const auto pump = [&] {
+        client.pump(device.session());
+        device.poll();
+        while (auto event = server.nextEvent()) {
+            switch (event->kind) {
+                case ServerEvent::Kind::ChannelConnected:
+                    ncs.onChannelConnected(event->channel);
+                    break;
+                case ServerEvent::Kind::ChannelDisconnected:
+                    ncs.onChannelDisconnected(event->channel);
+                    break;
+                case ServerEvent::Kind::Frame:
+                    ncs.onFrameReceived(event->channel, event->frame);
+                    break;
+                default:
+                    break;
+            }
+        }
+        ncs.poll();
+        while (auto directoryEvent = ncs.nextEvent()) {
+            dirEvents.push_back(std::move(*directoryEvent));
+        }
+    };
+    const auto waitFor = [&](const std::function<bool()>& predicate) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{5000};
+        while (std::chrono::steady_clock::now() < deadline) {
+            pump();
+            if (predicate()) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        }
+        return false;
+    };
+
+    ASSERT_TRUE(waitFor([&] { return client.isConnected(Channel::Mom); }));
+
+    // Push: an unsolicited object announcement is mirrored and acked.
+    ASSERT_TRUE(device.announceObject(makeObject("P1", "NEW")).ok());
+    ASSERT_TRUE(waitFor([&] { return ncs.object("P1") != nullptr; }));
+
+    // Single fetch (hit): the full mosObj comes back for a catalog object.
+    ASSERT_TRUE(ncs.requestObject("W2").ok());
+    ASSERT_TRUE(waitFor([&] { return ncs.object("W2") != nullptr; }));
+
+    // Single fetch (miss): a NACK surfaces as a RequestFailed directory event.
+    ASSERT_TRUE(ncs.requestObject("NOPE").ok());
+    ASSERT_TRUE(waitFor([&] {
+        for (const auto& event : dirEvents) {
+            if (event.type == imos::profiles::DirectoryEventType::RequestFailed &&
+                event.objID == "NOPE") {
+                return true;
+            }
+        }
+        return false;
+    }));
+    EXPECT_EQ(ncs.object("NOPE"), nullptr);
+
+    // Full sync (batch): the whole catalog arrives in one mosListAll.
+    ASSERT_TRUE(ncs.requestAll(0).ok());
+    ASSERT_TRUE(waitFor([&] { return ncs.object("W3") != nullptr; }));
+
+    client.stop();
 }
 
 // ---- WASM client smoke (plan §13 M2: "P0 conformance … + WASM client") ----

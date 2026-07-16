@@ -99,6 +99,14 @@ public:
     Result<Seq> enqueue(codec::Message message);
     Result<Seq> enqueue(Channel channel, codec::Message message);
 
+    /// Queue a response that completes the peer's in-flight exchange: sent in
+    /// sequence on `channel` but, unlike enqueue(), it never awaits an ack of
+    /// its own — the requester correlates it by the echoed messageID (e.g. a
+    /// listMachInfo answering reqMachInfo, or a mosObj answering mosReqObj).
+    /// Echo the request's messageID onto `message` before calling. This is the
+    /// terminal-reply seam every profile responder uses (plan §3.3).
+    Result<Seq> enqueueReply(Channel channel, codec::Message message);
+
     void onChannelConnected(Channel channel);
     void onChannelDisconnected(Channel channel);
     void onFrameReceived(Channel channel, std::span<const std::uint8_t> frame);

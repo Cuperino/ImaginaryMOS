@@ -9,5 +9,6 @@ imos_add_library(imos
   EXPORT_BASE  IMOS_IMOS
   SOURCES
     imos.cpp
+    device.cpp
   LINK_PUBLIC
     imos::core)

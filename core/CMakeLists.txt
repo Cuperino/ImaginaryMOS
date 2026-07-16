@@ -24,6 +24,7 @@ imos_add_library(core
     encoding/encoding.cpp
     framing/deframer.cpp
     profiles/profile0.cpp
+    profiles/profile1.cpp
     session/in_memory_store.cpp
     session/peer_session.cpp
     session/reconnect.cpp

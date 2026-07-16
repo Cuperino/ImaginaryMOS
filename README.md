@@ -27,13 +27,17 @@ See the [implementation plan](reference/imaginarymos-implementation-plan.md) for
 the full design, and [docs/coding-standards.md](docs/coding-standards.md) for
 contribution rules.
 
-> **Status: Milestone M2 (4.0 transport + Profile 0).** The sans-I/O core
+> **Status: Milestone M3 (Profiles 1–2), in progress.** The sans-I/O core
 > (codec for the full v4.0 vocabulary, encoding engine, session layer, file
 > store) and the MOS 4.0 WebSocket transports — IXWebSocket client/server with
 > Basic auth, TLS, permessage-deflate, standard & passive topologies, plus the
 > WebAssembly client — are implemented and tested, including Profile 0
-> end-to-end in both roles. Profiles 1+ land from M3 onward. The public API is
-> not yet stable.
+> end-to-end in both roles. **Profile 1 (Basic Object Based Workflow) has
+> landed**: the `imos::Device` and `incs::Ncs` role facades now compose the
+> session with the Profile 0/1 machinery (unsolicited `mosObj` push, single-
+> object fetch, and full-catalog sync in batch and paced modes). Profile 2
+> (running-order construction) is next and closes M3. The public API is not yet
+> stable.
 
 ## Requirements
 
