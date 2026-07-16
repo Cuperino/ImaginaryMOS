@@ -5,11 +5,11 @@ SPDX-License-Identifier: Apache-2.0
 
 # ImaginaryMOS
 
-A portable C++20 protocol library suite implementing the **MOS Protocol v4.0**
+A portable C++20 protocol library suite implementing the [MOS Protocol v4.0](https://mosprotocol.com/wp-content/MOS-Protocol-Documents/MOSProtocolVersion40/index.html)
 (all Profiles 0–7) with backwards compatibility for the MOS 2.8.x dual-socket
 TCP transport and the MOS 3.x SOAP WebService transport.
 
-It ships two role libraries over a shared, **sans-I/O** core:
+It ships two role libraries over a shared core free from I/O:
 
 - **`imos`** — the Media Object Server (device) side. The primary product,
   designed to be embedded in MOS devices (playout servers, graphics engines,
@@ -48,6 +48,33 @@ contribution rules.
 > for story-send-linked running orders). Profiles 5 and 7 are next. The
 > public API is not yet stable.
 
+## About MOS Protocol
+
+[Media Object Server Communications Protocol (MOS)](https://mosprotocol.com/):
+An evolving protocol for communications between Newsroom Computer Systems (NCS)
+and Media Object Servers (MOS) such as Video Servers,  Audio Servers, Still
+Stores, and Character Generators. This protocol is supported and developed
+through cooperative collaboration among equipment vendors, software vendors
+and end users. Our goal is to develop and maintain a common communications
+protocol which allows integration of diverse NCS and MOS equipment.
+
+### Media Object Server (MOS)
+A MOS is a device or system that manages and provides access to media objects,
+such as video clips, audio, graphics, or other broadcast assets, used in
+the creation of a news or program rundown. Examples include video servers,
+character generators (CGs), and archive/asset management systems. The MOS
+exposes information about its media objects (suchc as titles, durations,
+and metadata) to newsroom systems so that producers and journalists can
+reference and control that media as part of their running order.
+
+### NCS (Newsroom Computer System)
+An NCS is the system used by journalists and producers to write scripts,
+build rundowns, and manage the overall structure of a newscast or program.
+It's the "client" side of the MOS Protocol relationship, it receives information
+from one or more MOS devices about available media objects and incorporates
+that information into story scripts and running orders. It can also send commands
+back to control playback or other media functions.
+
 ## Requirements
 
 - **CMake ≥ 3.24** and **Ninja**
@@ -55,20 +82,22 @@ contribution rules.
 - **git** (dependencies are pinned as submodules under `3rdparty/`)
 - Network access on first configure (GoogleTest is fetched, pinned, for tests)
 
-Dependencies — IXWebSocket, libxml2, zlib (pinned submodules) and GoogleTest
-(FetchContent) — build from source by default. Pass `-DIMOS_USE_SYSTEM_DEPS=ON`
-to use system/vcpkg packages instead.
+## Dependencies included as submodules and auto downloaded dependencies
+- IXWebSocket
+- libxml2
+- zlib
+- GoogleTest
 
-Optional, depending on what you build and test:
+Pass `-DIMOS_USE_SYSTEM_DEPS=ON` to use system/vcpkg packages instead.
+
+## Optional dependencies, depending on what you wish to build and test:
 
 - **OpenSSL development headers** (e.g. Debian/Ubuntu `libssl-dev`) for TLS
   (`wss`) support — `-DIMOS_ENABLE_TLS=ON` or the `linux-tls` preset; the TLS
   test also uses the `openssl` CLI to generate its self-signed certificate.
   Builds without it stay `ws`-only and the TLS tests skip themselves. The TLS
   backend is pinned to OpenSSL on Linux, Android, Windows, and macOS
-  (Homebrew/MacPorts); iOS uses Secure Transport. Per the spec, self-signed
-  peer certificates are accepted by default, with
-  `TlsOptions::allowSelfSignedPeers = false` as the disable option.
+  (Homebrew/MacPorts); iOS uses Secure Transport.
 - **Emscripten 4.0.7** (`EMSDK` set) for the `wasm` preset.
 - **node** with WebSocket support for the WASM transport smoke test — node ≥ 22
   out of the box, node 20/21 via `--experimental-websocket` (the test detects
