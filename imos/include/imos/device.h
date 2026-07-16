@@ -4,25 +4,30 @@
 // imos::Device — the Media Object Server (device) role facade (plan §4.6,
 // §8.1). A thin, thread-free composition over the shared sans-I/O core: it
 // owns one PeerSession for the configured peer plus the profile responders
-// this milestone provides (Profile 0 machine-info, Profile 1 object
-// workflow, Profile 2 running orders with the shadow RunningOrderModel and
-// §3.3 resync driver) and dispatches inbound session events through them.
-// The host drives it pull-mode: push connectivity/frames in, call poll(),
-// drain nextEvent(). No library-owned threads (plan §8.1).
+// provided so far (Profile 0 machine-info, Profile 1 object workflow,
+// Profile 2 running orders with the shadow RunningOrderModel and §3.3
+// resync driver, Profile 4 RO enumeration/hydration and story bodies) and
+// dispatches inbound session events through them. The host drives it
+// pull-mode: push connectivity/frames in, call poll(), drain nextEvent().
+// No library-owned threads (plan §8.1).
 //
-// M3 grows the former version-stub into real code; later milestones thicken
-// it (search, control) without changing this shape.
+// M3 grew the former version-stub into real code; M4 added Profile 4; later
+// milestones thicken it (search, control) without changing this shape.
 
 #pragma once
 
 #include <deque>
 #include <optional>
 #include <span>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include <imos/imos_export.h>
 #include <imos/profiles/profile0.h>
 #include <imos/profiles/profile1.h>
 #include <imos/profiles/profile2.h>
+#include <imos/profiles/profile4.h>
 #include <imos/profiles/running_order_model.h>
 #include <imos/session/peer_session.h>
 
@@ -33,6 +38,10 @@ namespace imos {
 struct DeviceConfig {
     SessionConfig session;
     profiles::MachineInfo machineInfo;
+    /// Hydrate on connect (Profile 4): when the ro channel comes up, ask the
+    /// NCS for every MOS-active RO (roReqAll) and fetch each one into the
+    /// shadow model, so a cold-started device converges without host code.
+    bool hydrateRunningOrdersOnConnect = false;
 };
 
 class IMOS_IMOS_API Device {
@@ -54,6 +63,11 @@ public:
     /// host's raw sink instead (the host then owns RO state and resync).
     void attach(profiles::IRunningOrderSink& sink);
 
+    /// Register the host's story consumer for Profile 4 (roStorySend).
+    /// Stories are acked/NACKed from the sink's outcome; without a sink they
+    /// are still acked, stored, and queryable via story().
+    void attach(profiles::IStorySink& sink);
+
     /// What to do when construction messages reference objIDs the attached
     /// object source cannot resolve (default: accept with statuses).
     void setUnknownObjectPolicy(profiles::Profile2Responder::UnknownObjectPolicy policy);
@@ -62,6 +76,19 @@ public:
     /// item lookup, readiness, element status).
     [[nodiscard]] profiles::RunningOrderModel& runningOrderModel() noexcept;
     [[nodiscard]] const profiles::RunningOrderModel& runningOrderModel() const noexcept;
+
+    // Profile 4: RO enumeration, hydration, and the story store.
+
+    /// Ask the NCS for every MOS-active RO (roReqAll → roListAll header
+    /// index); with `hydrate` each listed RO is then fetched into the model.
+    Result<Seq> requestAllRunningOrders(bool hydrate = true);
+    /// roIDs from the last roListAll, and one verbatim <ro> header subtree.
+    [[nodiscard]] std::vector<std::string> runningOrderHeaderIDs() const;
+    [[nodiscard]] const codec::XmlNode* runningOrderHeader(std::string_view roID) const;
+    /// The last accepted roStorySend for a story (verbatim), or nullptr.
+    [[nodiscard]] const codec::Message* story(std::string_view roID,
+                                              std::string_view storyID) const;
+    [[nodiscard]] std::vector<std::string> storyIDs(std::string_view roID) const;
 
     // Host glue: connectivity changes and inbound frames pushed in.
     void onChannelConnected(Channel channel);
@@ -102,6 +129,8 @@ private:
     profiles::Profile0Responder profile0_;
     profiles::Profile1Responder profile1_;
     profiles::Profile2Responder profile2_;
+    profiles::Profile4Responder profile4_;
+    bool hydrateOnConnect_ = false;
     std::deque<SessionEvent> appEvents_;
 };
 

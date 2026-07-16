@@ -459,6 +459,94 @@ XmlNode RunningOrderAuthor::makeItem(std::string_view itemID, std::string_view o
     return item;
 }
 
+Result<void> RunningOrderAuthor::setStoryBody(std::string_view roID, std::string_view storyID,
+                                              const XmlNode& storyBody) {
+    if (!storyBody.isElement("storyBody")) {
+        return imos::makeError(imos::ErrorCode::InvalidArgument, "not a <storyBody> subtree");
+    }
+    if (desired_.story(roID, storyID) == nullptr) {
+        return imos::makeError(
+            imos::ErrorCode::NotFound,
+            "unknown story '" + std::string{storyID} + "' in roID '" + std::string{roID} + "'");
+    }
+    bodies_[std::string{roID}][std::string{storyID}] = AuthoredBody{storyBody, false};
+    storySendLinked_.insert(std::string{roID});
+    return {};
+}
+
+Result<void> RunningOrderAuthor::setAgencyStoryBody(std::string_view roID, std::string_view storyID,
+                                                    const XmlNode& metadata) {
+    if (!metadata.isElement("mosExternalMetadata")) {
+        return imos::makeError(imos::ErrorCode::InvalidArgument,
+                               "not a <mosExternalMetadata> subtree");
+    }
+    if (desired_.story(roID, storyID) == nullptr) {
+        return imos::makeError(
+            imos::ErrorCode::NotFound,
+            "unknown story '" + std::string{storyID} + "' in roID '" + std::string{roID} + "'");
+    }
+    bodies_[std::string{roID}][std::string{storyID}] = AuthoredBody{metadata, true};
+    storySendLinked_.insert(std::string{roID});
+    return {};
+}
+
+void RunningOrderAuthor::setStorySendLinked(std::string_view roID, bool linked) {
+    if (linked) {
+        storySendLinked_.insert(std::string{roID});
+    } else {
+        storySendLinked_.erase(std::string{roID});
+    }
+}
+
+bool RunningOrderAuthor::storySendLinked(std::string_view roID) const {
+    return storySendLinked_.contains(std::string{roID});
+}
+
+Result<imos::Seq> RunningOrderAuthor::sendStory(std::string_view roID, std::string_view storyID) {
+    const XmlNode* story = desired_.story(roID, storyID);
+    if (story == nullptr) {
+        return imos::makeError(
+            imos::ErrorCode::NotFound,
+            "unknown story '" + std::string{storyID} + "' in roID '" + std::string{roID} + "'");
+    }
+    const AuthoredBody* authored = nullptr;
+    if (const auto ro = bodies_.find(std::string{roID}); ro != bodies_.end()) {
+        if (const auto it = ro->second.find(std::string{storyID}); it != ro->second.end()) {
+            authored = &it->second;
+        }
+    }
+    if (authored == nullptr) {
+        return imos::makeError(imos::ErrorCode::NotFound,
+                               "story '" + std::string{storyID} +
+                                   "' has no authored body (setStoryBody/setAgencyStoryBody)");
+    }
+
+    Message send = imos::codec::makeMessage(MessageType::RoStorySend);
+    XmlNode* messageBody = send.body();
+    messageBody->appendElement("roID").setText(roID);
+    messageBody->appendElement("storyID").setText(storyID);
+    if (const std::string slug = childTextOf(*story, "storySlug"); !slug.empty()) {
+        messageBody->appendElement("storySlug").setText(slug);
+    }
+    if (const std::string num = childTextOf(*story, "storyNum"); !num.empty()) {
+        messageBody->appendElement("storyNum").setText(num);
+    }
+    if (authored->agency) {
+        // Agency passthrough (spec §3.5.5): an empty storyBody flagged
+        // Read1stMEMasBody, then the authored MEM block verbatim — its
+        // mosPayload is the body and must reach the device byte-identical.
+        messageBody->appendElement("storyBody").setAttribute("Read1stMEMasBody", "true");
+    }
+    messageBody->children.push_back(authored->node);
+
+    storySendLinked_.insert(std::string{roID});
+    Result<imos::Seq> seq = session_->enqueue(std::move(send));
+    if (seq.ok()) {
+        pending_.emplace(seq.value(), std::string{roID});  // roAck → CommitEvent
+    }
+    return seq;
+}
+
 Result<std::vector<imos::Seq>> RunningOrderAuthor::commit(std::string_view roID) {
     const std::string id{roID};
     const XmlNode* want = desired_.runningOrder(id);
@@ -494,7 +582,12 @@ Result<std::vector<imos::Seq>> RunningOrderAuthor::commit(std::string_view roID)
             messages.push_back(std::move(meta));
         }
         diffSequence(have, *want, storyLevel(), id, messages);
-        if (messages.size() > config_.replaceThreshold) {
+        // The wholesale-roReplace collapse is forbidden for story-send-linked
+        // ROs (plan §1.3, mandatory): a replace is a discard-and-rebuild —
+        // DELETE+INSERT of every story — and the prompter would drop its
+        // scripts. Those ROs always take the incremental (MOVE-preserving)
+        // sequence, whatever its length.
+        if (messages.size() > config_.replaceThreshold && !storySendLinked_.contains(id)) {
             // The incremental delta is bigger than a wholesale replacement.
             messages.clear();
             Message whole = imos::codec::makeMessage(MessageType::RoReplace);

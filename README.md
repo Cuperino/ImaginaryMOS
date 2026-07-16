@@ -27,19 +27,26 @@ See the [implementation plan](reference/imaginarymos-implementation-plan.md) for
 the full design, and [docs/coding-standards.md](docs/coding-standards.md) for
 contribution rules.
 
-> **Status: Milestone M3 (Profiles 1–2), complete.** The sans-I/O core
-> (codec for the full v4.0 vocabulary, encoding engine, session layer, file
-> store) and the MOS 4.0 WebSocket transports — IXWebSocket client/server with
-> Basic auth, TLS, permessage-deflate, standard & passive topologies, plus the
-> WebAssembly client — are implemented and tested, including Profile 0
-> end-to-end in both roles. The `imos::Device` and `incs::Ncs` role facades
-> compose the session with **Profile 1** (unsolicited `mosObj` push, single-
-> object fetch, full-catalog sync in batch and paced modes) and **Profile 2**
-> (the roConstruction family into a transactional `RunningOrderModel` with the
+> **Status: Milestone M4 in progress — Profile 4 done (Profiles 5 and 7
+> remain to close it).** The sans-I/O core (codec for the full v4.0
+> vocabulary, encoding engine, session layer, file store) and the MOS 4.0
+> WebSocket transports — IXWebSocket client/server with Basic auth, TLS,
+> permessage-deflate, standard & passive topologies, plus the WebAssembly
+> client — are implemented and tested, including Profile 0 end-to-end in both
+> roles. The `imos::Device` and `incs::Ncs` role facades compose the session
+> with **Profile 1** (unsolicited `mosObj` push, single-object fetch,
+> full-catalog sync in batch and paced modes), **Profile 2** (the
+> roConstruction family into a transactional `RunningOrderModel` with the
 > spec's resync-on-unknown-ID heuristic on the device side; a running-order
 > authoring/diff API emitting minimal `roElementAction` sequences on the NCS
-> side; bidirectional `roElementStat`). Profiles 4–5 (M4) are next. The public
-> API is not yet stable.
+> side; bidirectional `roElementStat`), and **Profile 4** (RO enumeration
+> `roReqAll`/`roListAll` with cold-start hydration into the shadow model;
+> `roStorySend` story bodies resolved through hand-written mixed-content
+> helpers, delivered to a host story sink with byte-verbatim
+> `Read1stMEMasBody` agency payloads such as NewsML; story authoring and
+> `sendStory` on the NCS side, with the MOVE-not-DELETE+INSERT rule mandatory
+> for story-send-linked running orders). Profiles 5 and 7 are next. The
+> public API is not yet stable.
 
 ## Requirements
 

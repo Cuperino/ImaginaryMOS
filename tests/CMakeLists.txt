@@ -32,6 +32,7 @@ add_executable(imos_core_test
   codec/roundtrip_test.cpp
   codec/message_test.cpp
   codec/legacy_test.cpp
+  codec/story_body_test.cpp
   encoding/encoding_test.cpp
   framing/deframer_test.cpp
   profiles/profile0_test.cpp
@@ -68,7 +69,8 @@ endif()
 # ---- profile conformance suites (real imos vs real incs, plan §10) ----
 add_executable(imos_profile_test
   profiles/profile1_test.cpp
-  profiles/profile2_test.cpp)
+  profiles/profile2_test.cpp
+  profiles/profile4_test.cpp)
 target_link_libraries(imos_profile_test PRIVATE
   GTest::gtest_main
   imos::core

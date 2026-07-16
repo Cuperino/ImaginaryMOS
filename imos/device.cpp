@@ -21,7 +21,9 @@ Device::Device(DeviceConfig config, PeerSession::Dependencies deps)
     : session_(std::move(config.session), deps),
       profile0_(asDevice(std::move(config.machineInfo)), &session_, deps.clock),
       profile1_(nullptr, &session_, deps.clock),
-      profile2_(&session_, deps.clock) {}
+      profile2_(&session_, deps.clock),
+      profile4_(&session_, &profile2_),
+      hydrateOnConnect_(config.hydrateRunningOrdersOnConnect) {}
 
 void Device::attach(profiles::IObjectSource& source) {
     profile1_.setSource(&source);
@@ -30,6 +32,10 @@ void Device::attach(profiles::IObjectSource& source) {
 
 void Device::attach(profiles::IRunningOrderSink& sink) {
     profile2_.setSink(&sink);
+}
+
+void Device::attach(profiles::IStorySink& sink) {
+    profile4_.setSink(&sink);
 }
 
 void Device::setUnknownObjectPolicy(profiles::Profile2Responder::UnknownObjectPolicy policy) {
@@ -46,6 +52,9 @@ const profiles::RunningOrderModel& Device::runningOrderModel() const noexcept {
 
 void Device::onChannelConnected(Channel channel) {
     session_.onChannelConnected(channel);
+    if (channel == Channel::Ro && hydrateOnConnect_) {
+        (void)profile4_.requestAllRunningOrders(true);
+    }
     dispatch();
 }
 
@@ -84,6 +93,26 @@ Result<Seq> Device::reportElementStatus(const profiles::ElementStatusReport& rep
     return profile2_.sendElementStat(report);
 }
 
+Result<Seq> Device::requestAllRunningOrders(bool hydrate) {
+    return profile4_.requestAllRunningOrders(hydrate);
+}
+
+std::vector<std::string> Device::runningOrderHeaderIDs() const {
+    return profile4_.headerIDs();
+}
+
+const codec::XmlNode* Device::runningOrderHeader(std::string_view roID) const {
+    return profile4_.header(roID);
+}
+
+const codec::Message* Device::story(std::string_view roID, std::string_view storyID) const {
+    return profile4_.story(roID, storyID);
+}
+
+std::vector<std::string> Device::storyIDs(std::string_view roID) const {
+    return profile4_.storyIDs(roID);
+}
+
 std::optional<profiles::ElementStatusReport> Device::nextElementStatus() {
     return profile2_.nextStatus();
 }
@@ -99,7 +128,8 @@ std::optional<SessionEvent> Device::nextEvent() {
 
 void Device::dispatch() {
     while (std::optional<SessionEvent> event = session_.nextEvent()) {
-        if (profile0_.handle(*event) || profile1_.handle(*event) || profile2_.handle(*event)) {
+        if (profile0_.handle(*event) || profile1_.handle(*event) || profile2_.handle(*event) ||
+            profile4_.handle(*event)) {
             continue;
         }
         appEvents_.push_back(std::move(*event));

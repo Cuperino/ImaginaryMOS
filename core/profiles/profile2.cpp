@@ -312,24 +312,38 @@ void Profile2Responder::handleConstruction(const SessionEvent& event) {
         return;
     }
     if (outcome.error().code == ErrorCode::NotFound && !roID.empty()) {
-        startResync(roID, event.channel, outcome.error().message);
+        startResync(roID, event.channel, outcome.error().message, /*announce=*/true);
     }
 }
 
+void Profile2Responder::requestRunningOrder(std::string_view roID) {
+    // Hydration: same rebuild machinery, but nothing is out of sync, so no
+    // ResyncNeeded announcement.
+    startResync(std::string{roID}, Channel::Ro, "hydrating", /*announce=*/false);
+}
+
+void Profile2Responder::noteUnknownRunningOrder(std::string_view roID, Channel channel,
+                                                std::string_view reason) {
+    startResync(std::string{roID}, channel, reason, /*announce=*/true);
+}
+
 void Profile2Responder::startResync(const std::string& roID, Channel channel,
-                                    std::string_view reason) {
+                                    std::string_view reason, bool announce) {
     if (resyncing_.contains(roID)) {
         return;  // one rebuild per RO; later confused messages just NACK
     }
     resyncing_.insert(roID);
 
-    // Surface a single "resyncing" state to the application through the
-    // session's event queue seam (§3.3) — the session stays message-agnostic.
-    SessionEvent event;
-    event.type = SessionEventType::ResyncNeeded;
-    event.channel = channel;
-    event.diagnostic = "resynchronizing roID '" + roID + "': " + std::string{reason};
-    session_->postEvent(std::move(event));
+    if (announce) {
+        // Surface a single "resyncing" state to the application through the
+        // session's event queue seam (§3.3) — the session stays
+        // message-agnostic.
+        SessionEvent event;
+        event.type = SessionEventType::ResyncNeeded;
+        event.channel = channel;
+        event.diagnostic = "resynchronizing roID '" + roID + "': " + std::string{reason};
+        session_->postEvent(std::move(event));
+    }
 
     codec::Message request = codec::makeMessage(codec::MessageType::RoReq);
     if (codec::XmlNode* body = request.body()) {

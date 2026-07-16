@@ -676,6 +676,136 @@ TEST(Ws40Transport, Profile2RunningOrderWorkflowOverWebSocket) {
     client.stop();
 }
 
+// ---- Profile 4 over real sockets (plan §13 M4 exit criterion) -------------
+//
+// The NewsML-preservation gate on the wire: an agency story authored as a
+// Read1stMEMasBody payload crosses a real WebSocket in each §3.4 wire
+// encoding — UCS-2 BE binary frames and UTF-8 text frames — and the bytes
+// the device's story sink sees must equal the authored bytes exactly.
+// Hydration, resync, and the diff rule stay in the fake-clock unit suite.
+
+namespace {
+
+/// Minimal capturing sink: serialized agency-MEM bytes per accepted story.
+class CapturingStorySink : public imos::profiles::IStorySink {
+public:
+    std::vector<std::string> agencyBytes;
+    imos::Result<void> onStory(const imos::profiles::StoryView& story) override {
+        if (story.body.bodyIsAgencyPayload()) {
+            agencyBytes.push_back(imos::codec::serializeXmlNode(*story.body.agencyMetadata));
+        }
+        return {};
+    }
+};
+
+}  // namespace
+
+TEST(Ws40Transport, Profile4AgencyPayloadPreservedOverWebSocketBothEncodings) {
+    for (const WireEncoding encoding : {WireEncoding::Ucs2Be, WireEncoding::Utf8}) {
+        SCOPED_TRACE(imos::encoding::wireEncodingName(encoding));
+        SystemClock clock;
+        imos::InMemoryMessageStore deviceStore;
+        imos::InMemoryMessageStore ncsStore;
+
+        ServerConfig serverConfig;
+        serverConfig.host = "127.0.0.1";
+        serverConfig.port = ix::getFreePort();
+        Ws40Server server{serverConfig};
+        ServerPeerConfig peer;
+        peer.mosID = kMosID;
+        peer.ncsID = kNcsID;
+        peer.wireEncoding = encoding;
+        ASSERT_TRUE(server.addPeer(peer).ok());
+        ASSERT_TRUE(server.start().ok());
+        incs::Ncs ncs{
+            {sessionConfig(encoding), machineInfo(DeviceType::Ncs)},
+            PeerSession::Dependencies{&clock, &server.transportFor(kMosID, kNcsID), &ncsStore}};
+
+        ClientConfig clientConfig;
+        clientConfig.endpointUrl =
+            "ws://127.0.0.1:" + std::to_string(serverConfig.port) + "/mos/Communication";
+        clientConfig.mosID = kMosID;
+        clientConfig.ncsID = kNcsID;
+        clientConfig.channels = {Channel::Ro};
+        clientConfig.wireEncoding = encoding;
+        Ws40Client client{clientConfig, &clock};
+        imos::Device device{{sessionConfig(encoding), machineInfo(DeviceType::Mos)},
+                            PeerSession::Dependencies{&clock, &client, &deviceStore}};
+        CapturingStorySink sink;
+        device.attach(sink);
+        ASSERT_TRUE(client.start().ok());
+
+        const auto pump = [&] {
+            client.pump(device.session());
+            device.poll();
+            while (auto event = server.nextEvent()) {
+                switch (event->kind) {
+                    case ServerEvent::Kind::ChannelConnected:
+                        ncs.onChannelConnected(event->channel);
+                        break;
+                    case ServerEvent::Kind::ChannelDisconnected:
+                        ncs.onChannelDisconnected(event->channel);
+                        break;
+                    case ServerEvent::Kind::Frame:
+                        ncs.onFrameReceived(event->channel, event->frame);
+                        break;
+                    default:
+                        break;
+                }
+            }
+            ncs.poll();
+        };
+        const auto waitFor = [&](const std::function<bool()>& predicate) {
+            const auto deadline =
+                std::chrono::steady_clock::now() + std::chrono::milliseconds{5000};
+            while (std::chrono::steady_clock::now() < deadline) {
+                pump();
+                if (predicate()) {
+                    return true;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds{2});
+            }
+            return false;
+        };
+
+        ASSERT_TRUE(waitFor([&] { return client.isConnected(Channel::Ro); }));
+
+        ASSERT_TRUE(ncs.author().create("WS-RO4", "WS Rundown").ok());
+        ASSERT_TRUE(
+            ncs.author().insertStory("WS-RO4", incs::RunningOrderAuthor::makeStory("s1")).ok());
+        ASSERT_TRUE(ncs.author().commit("WS-RO4").ok());
+        ASSERT_TRUE(waitFor([&] { return device.runningOrderModel().has("WS-RO4"); }));
+
+        // Multi-kilobyte NewsML with non-ASCII BMP characters, parsed into a
+        // retained MEM subtree exactly as an NCS host would author it.
+        std::string newsml = "<NewsML>\n<NewsItem attente=\"vérifiée\">\n";
+        for (int i = 0; i < 64; ++i) {
+            newsml += "  <p>Dépêche nº" + std::to_string(i) +
+                      " — l'aperçu «détaillé» pèse ±120 octets; Ωμέγα.\t</p>\n";
+        }
+        newsml += "</NewsItem>\n</NewsML>";
+        auto wrapper = imos::codec::parseMessage(
+            "<mos><mosID>m</mosID><ncsID>n</ncsID><messageID>1</messageID>"
+            "<roStorySend><roID>r</roID><storyID>s</storyID><storyBody/>"
+            "<mosExternalMetadata><mosScope>STORY</mosScope>"
+            "<mosSchema>http://agency.example/newsml</mosSchema>"
+            "<mosPayload>" +
+            newsml + "</mosPayload></mosExternalMetadata></roStorySend></mos>");
+        ASSERT_TRUE(wrapper.ok());
+        const imos::codec::XmlNode metadata =
+            *wrapper.value().body()->firstChildElement("mosExternalMetadata");
+        const std::string authoredBytes = imos::codec::serializeXmlNode(metadata);
+        ASSERT_GT(authoredBytes.size(), 4096U);
+
+        ASSERT_TRUE(ncs.author().setAgencyStoryBody("WS-RO4", "s1", metadata).ok());
+        ASSERT_TRUE(ncs.sendStory("WS-RO4", "s1").ok());
+        ASSERT_TRUE(waitFor([&] { return !sink.agencyBytes.empty(); }));
+        EXPECT_EQ(sink.agencyBytes.front(), authoredBytes);
+
+        client.stop();
+    }
+}
+
 // ---- WASM client smoke (plan §13 M2: "P0 conformance … + WASM client") ----
 //
 // Runs the Ws40EmscriptenClient (built by the wasm preset as

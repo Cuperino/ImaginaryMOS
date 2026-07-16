@@ -20,12 +20,14 @@ imos_add_library(core
     codec/xml_parse.cpp
     codec/message.cpp
     codec/legacy.cpp
+    codec/story_body.cpp
     codec/gen/message_types.cpp
     encoding/encoding.cpp
     framing/deframer.cpp
     profiles/profile0.cpp
     profiles/profile1.cpp
     profiles/profile2.cpp
+    profiles/profile4.cpp
     profiles/running_order_model.cpp
     session/in_memory_store.cpp
     session/peer_session.cpp

@@ -5,13 +5,14 @@
 // mirror of imos::Device over the same sans-I/O core: it owns one PeerSession
 // for the configured peer plus the Profile 0 machine-info responder, the
 // Profile 1 ObjectDirectory (the NCS's mirror of the peer's object catalog),
-// and the Profile 2 running-order authoring/diff API with its responder
-// (roReq answers, roElementStat ingest), and dispatches inbound session
-// events through them. Powers the NRCS simulator used for M8 interop.
-// Driven pull-mode; no library-owned threads.
+// the Profile 2 running-order authoring/diff API with its responder (roReq
+// answers, roElementStat ingest), and the Profile 4 responder (roReqAll →
+// headers-only roListAll) plus story origination (sendStory), and
+// dispatches inbound session events through them. Powers the NRCS simulator
+// used for M8 interop. Driven pull-mode; no library-owned threads.
 //
-// M3 grows the former version-stub into real code; object search lands in a
-// later milestone without changing this shape.
+// M3 grew the former version-stub into real code; M4 added Profile 4;
+// object search lands in a later milestone without changing this shape.
 
 #pragma once
 
@@ -26,6 +27,7 @@
 #include <imos/profiles/profile0.h>
 #include <imos/profiles/profile1.h>
 #include <imos/profiles/profile2.h>
+#include <imos/profiles/profile4.h>
 #include <imos/session/peer_session.h>
 #include <incs/incs_export.h>
 #include <incs/running_order_author.h>
@@ -73,6 +75,12 @@ public:
     [[nodiscard]] RunningOrderAuthor& author() noexcept { return author_; }
     [[nodiscard]] const RunningOrderAuthor& author() const noexcept { return author_; }
 
+    /// Send one story's full script to the device (Profile 4 roStorySend).
+    /// The body must have been authored first — author().setStoryBody() or
+    /// setAgencyStoryBody() — and the RO becomes story-send-linked. The
+    /// device's roAck resolves through author().nextEvent().
+    imos::Result<imos::Seq> sendStory(std::string_view roID, std::string_view storyID);
+
     /// Originate an NCS-side roElementStat (2.8.5+; flows into the device's
     /// model). <time> is stamped from the injected clock.
     imos::Result<imos::Seq> sendElementStat(const imos::profiles::ElementStatusReport& report);
@@ -91,6 +99,7 @@ private:
     imos::profiles::ObjectDirectory directory_;
     RunningOrderAuthor author_;
     imos::profiles::Profile2NcsResponder profile2_;
+    imos::profiles::Profile4NcsResponder profile4_;
     std::deque<imos::SessionEvent> appEvents_;
 };
 

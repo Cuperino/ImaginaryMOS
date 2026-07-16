@@ -17,12 +17,19 @@
 // the device would NACK is rejected at authoring time. The author also
 // implements IRunningOrderSource: a device resyncing via roReq is answered
 // with the desired state, which then becomes the device's projected state.
+//
+// Profile 4 (M4) grows the authoring surface with story bodies: full
+// scripts (setStoryBody) or verbatim agency payloads (setAgencyStoryBody,
+// the Read1stMEMasBody form) carried to devices by sendStory()/roStorySend,
+// plus the story-send-linked flag that makes the MOVE rule mandatory.
 
 #pragma once
 
 #include <cstddef>
 #include <deque>
+#include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -103,6 +110,38 @@ public:
                                                        std::string_view mosID,
                                                        std::string_view itemSlug = {});
 
+    // ---- Profile 4: story bodies and story-send linkage ------------------
+
+    /// Author the full script for one story (Profile 4). `storyBody` is a
+    /// <storyBody> subtree — paragraphs, presenter cues, embedded
+    /// <storyItem> references — stored verbatim and carried by sendStory().
+    /// Bodies are not RO construction content: commit() never sends them.
+    /// The story must exist in the desired state. Marks the RO
+    /// story-send-linked.
+    imos::Result<void> setStoryBody(std::string_view roID, std::string_view storyID,
+                                    const imos::codec::XmlNode& storyBody);
+
+    /// Author an agency story (spec §3.5.5 Read1stMEMasBody): `metadata` is
+    /// a <mosExternalMetadata> block whose mosPayload *is* the body (NewsML
+    /// and friends). Stored verbatim; sendStory() emits an empty storyBody
+    /// with Read1stMEMasBody="true" followed by this block, untouched.
+    imos::Result<void> setAgencyStoryBody(std::string_view roID, std::string_view storyID,
+                                          const imos::codec::XmlNode& metadata);
+
+    /// Flag an RO as story-send-linked (a prompter or publishing endpoint
+    /// consumes its scripts). Plan §3.2 rule, mandatory not heuristic: story
+    /// moves on such an RO must reach the wire as roElementAction MOVE, so
+    /// commit() never collapses a diff into the wholesale-roReplace fallback
+    /// (which would tell the prompter to discard and re-learn every script).
+    /// setStoryBody/setAgencyStoryBody/sendStory set this implicitly.
+    void setStorySendLinked(std::string_view roID, bool linked);
+    [[nodiscard]] bool storySendLinked(std::string_view roID) const;
+
+    /// Build and enqueue a roStorySend for an authored story (its body must
+    /// have been set). The device's roAck resolves through nextEvent() like
+    /// a committed message.
+    imos::Result<imos::Seq> sendStory(std::string_view roID, std::string_view storyID);
+
     // ---- queries ---------------------------------------------------------
 
     /// The desired state (shared RunningOrderModel semantics and queries).
@@ -141,6 +180,13 @@ private:
         std::optional<std::string> roAir;
     };
 
+    /// An authored story body: a verbatim <storyBody> subtree, or — agency
+    /// form — a verbatim <mosExternalMetadata> block (Read1stMEMasBody).
+    struct AuthoredBody {
+        imos::codec::XmlNode node;
+        bool agency = false;
+    };
+
     imos::Result<void> applyEdit(const imos::codec::Message& message);
 
     imos::PeerSession* session_;
@@ -149,6 +195,8 @@ private:
     std::unordered_map<std::string, DeviceRo> device_;
     std::unordered_map<imos::Seq, std::string> pending_;  ///< seq → roID
     std::deque<CommitEvent> events_;
+    std::map<std::string, std::map<std::string, AuthoredBody>> bodies_;  ///< roID → storyID → body
+    std::set<std::string> storySendLinked_;
 };
 
 }  // namespace incs

@@ -148,10 +148,28 @@ public:
     /// True while a roReq/roList rebuild for this RO is outstanding.
     [[nodiscard]] bool resyncing(std::string_view roID) const;
 
+    /// True when construction messages route into the owned model (no raw
+    /// sink attached) — i.e. this responder owns RO state and resync.
+    [[nodiscard]] bool modelMode() const noexcept { return sink_ == nullptr; }
+
+    /// Fetch one RO into the model via the §3.3 rebuild machinery (roReq →
+    /// roList apply, or erase on NACK) without announcing ResyncNeeded —
+    /// nothing is out of sync, the model is just cold. This is Profile 4's
+    /// hydration path; resyncing(roID) is true while the fetch is
+    /// outstanding, and duplicate calls coalesce.
+    void requestRunningOrder(std::string_view roID);
+
+    /// Companion-profile seam (§3.3): another responder received a message
+    /// referencing an RO this model does not know (e.g. Profile 4's
+    /// roStorySend). Runs the full resync heuristic — one ResyncNeeded
+    /// announcement, then the roReq/roList rebuild.
+    void noteUnknownRunningOrder(std::string_view roID, Channel channel, std::string_view reason);
+
 private:
     void handleConstruction(const SessionEvent& event);
     Result<void> dispatchToSink(const codec::Message& message);
-    void startResync(const std::string& roID, Channel channel, std::string_view reason);
+    void startResync(const std::string& roID, Channel channel, std::string_view reason,
+                     bool announce);
     void completeResync(const SessionEvent& event);
     /// Item objID validation tuples for roCreate/roReplace/roElementAction
     /// payloads; returns the first unknown objID ("" when all resolve).

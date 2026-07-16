@@ -17,6 +17,7 @@
 #include <vector>
 
 #include <imos/device.h>
+#include <imos/encoding/encoding.h>
 #include <imos/session/in_memory_store.h>
 #include <incs/ncs.h>
 
@@ -28,6 +29,13 @@ struct TwoRoleFixture {
     static constexpr const char* kMosID = "device.example.mos";
     static constexpr const char* kNcsID = "ncs.example.com";
 
+    /// Per-test knobs: the §3.4 wire encoding both roles speak, and the
+    /// Profile 4 hydrate-on-connect device option.
+    struct Options {
+        imos::encoding::WireEncoding wireEncoding = imos::encoding::WireEncoding::Ucs2Be;
+        bool hydrateRunningOrdersOnConnect = false;
+    };
+
     FakeClock clock;
     FakeRandom random;
     LoopbackEndpoint deviceTransport;
@@ -37,24 +45,33 @@ struct TwoRoleFixture {
     std::unique_ptr<imos::Device> device;
     std::unique_ptr<incs::Ncs> ncs;
 
-    TwoRoleFixture() {
+    TwoRoleFixture() : TwoRoleFixture(Options{}) {}
+
+    explicit TwoRoleFixture(const Options& options) {
+        imos::DeviceConfig deviceConfig{sessionConfig(options.wireEncoding),
+                                        machineInfo(imos::profiles::DeviceType::Mos)};
+        deviceConfig.hydrateRunningOrdersOnConnect = options.hydrateRunningOrdersOnConnect;
         device = std::make_unique<imos::Device>(
-            imos::DeviceConfig{sessionConfig(), machineInfo(imos::profiles::DeviceType::Mos)},
+            std::move(deviceConfig),
             imos::PeerSession::Dependencies{&clock, &deviceTransport, &deviceStore, nullptr,
                                             &random, nullptr});
         ncs = std::make_unique<incs::Ncs>(
-            incs::NcsConfig{sessionConfig(), machineInfo(imos::profiles::DeviceType::Ncs)},
+            incs::NcsConfig{sessionConfig(options.wireEncoding),
+                            machineInfo(imos::profiles::DeviceType::Ncs)},
             imos::PeerSession::Dependencies{&clock, &ncsTransport, &ncsStore, nullptr, &random,
                                             nullptr});
     }
 
-    static imos::SessionConfig sessionConfig() {
+    static imos::SessionConfig sessionConfig(
+        imos::encoding::WireEncoding encoding = imos::encoding::WireEncoding::Ucs2Be) {
         imos::SessionConfig config;
         config.mosID = kMosID;
         config.ncsID = kNcsID;
         config.retryTimeoutMillis = 10'000;
         config.maxRetries = 3;
         config.keepAliveIntervalMillis = 0;  // keep the wire quiet under test
+        config.wireEncode.encoding = encoding;
+        config.wireDecode.encoding = encoding;
         return config;
     }
 
@@ -65,7 +82,7 @@ struct TwoRoleFixture {
         info.swRev = "1.0.0";
         info.id = type == imos::profiles::DeviceType::Mos ? kMosID : kNcsID;
         info.deviceType = type;
-        info.profiles = {true, true, true, false, false, false, false, false};
+        info.profiles = {true, true, true, false, true, false, false, false};
         return info;
     }
 
