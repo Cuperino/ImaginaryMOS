@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <deque>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <imos/device.h>
@@ -38,6 +39,14 @@ struct TwoRoleFixture {
         /// on (the device implements it); flip off to exercise the NCS's
         /// strict capability gating for roReqStoryAction.
         bool advertiseProfile7 = true;
+        /// Session identities, overridable so the Profile 6 suite can run
+        /// with fully qualified (or deliberately plain) IDs.
+        std::string mosID = kMosID;
+        std::string ncsID = kNcsID;
+        /// Profile 6 toggles per role. All-off by default — the rest of the
+        /// suites run exactly as before Profile 6 existed.
+        imos::profiles::Profile6Config deviceProfile6{};
+        imos::profiles::Profile6Config ncsProfile6{};
     };
 
     FakeClock clock;
@@ -52,9 +61,13 @@ struct TwoRoleFixture {
     TwoRoleFixture() : TwoRoleFixture(Options{}) {}
 
     explicit TwoRoleFixture(const Options& options) {
-        imos::DeviceConfig deviceConfig{sessionConfig(options.wireEncoding),
-                                        machineInfo(imos::profiles::DeviceType::Mos)};
+        imos::SessionConfig session = sessionConfig(options.wireEncoding);
+        session.mosID = options.mosID;
+        session.ncsID = options.ncsID;
+        imos::DeviceConfig deviceConfig{session, machineInfo(imos::profiles::DeviceType::Mos)};
+        deviceConfig.machineInfo.id = options.mosID;
         deviceConfig.hydrateRunningOrdersOnConnect = options.hydrateRunningOrdersOnConnect;
+        deviceConfig.profile6 = options.deviceProfile6;
         if (!options.advertiseProfile7) {
             deviceConfig.machineInfo.profiles[7] = false;
         }
@@ -62,11 +75,12 @@ struct TwoRoleFixture {
             std::move(deviceConfig),
             imos::PeerSession::Dependencies{&clock, &deviceTransport, &deviceStore, nullptr,
                                             &random, nullptr});
+        incs::NcsConfig ncsConfig{session, machineInfo(imos::profiles::DeviceType::Ncs)};
+        ncsConfig.machineInfo.id = options.ncsID;
+        ncsConfig.profile6 = options.ncsProfile6;
         ncs = std::make_unique<incs::Ncs>(
-            incs::NcsConfig{sessionConfig(options.wireEncoding),
-                            machineInfo(imos::profiles::DeviceType::Ncs)},
-            imos::PeerSession::Dependencies{&clock, &ncsTransport, &ncsStore, nullptr, &random,
-                                            nullptr});
+            std::move(ncsConfig), imos::PeerSession::Dependencies{&clock, &ncsTransport, &ncsStore,
+                                                                  nullptr, &random, nullptr});
     }
 
     static imos::SessionConfig sessionConfig(

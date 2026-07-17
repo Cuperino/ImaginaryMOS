@@ -49,3 +49,7 @@ imos_add_fuzzer(imos_fuzz_store_recovery
 imos_add_fuzzer(imos_fuzz_ws40_url
   SOURCES fuzz_ws40_url.cpp
   LINK imos::core-static)
+
+imos_add_fuzzer(imos_fuzz_fqid
+  SOURCES fuzz_fqid.cpp
+  LINK imos::core-static)

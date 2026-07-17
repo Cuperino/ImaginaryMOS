@@ -256,7 +256,25 @@ RunningOrderAuthor::RunningOrderAuthor(imos::PeerSession* session, Config config
     : session_(session), config_(config) {}
 
 Result<void> RunningOrderAuthor::applyEdit(const Message& message) {
+    if (profile6_ != nullptr && profile6_->rejecting()) {
+        if (Result<void> accepted = rejectForeign(profile6_->collectReferences(message));
+            !accepted.ok()) {
+            return accepted;
+        }
+    }
     return desired_.apply(message);
+}
+
+Result<void> RunningOrderAuthor::rejectForeign(
+    const std::vector<imos::profiles::ClassifiedReference>& references) const {
+    const imos::profiles::ClassifiedReference* foreign =
+        imos::profiles::Profile6Classifier::firstForeign(references);
+    if (foreign == nullptr) {
+        return {};
+    }
+    return imos::makeError(
+        imos::ErrorCode::InvalidArgument,
+        "foreign object reference '" + foreign->mosID + "' (objID '" + foreign->objID + "')");
 }
 
 Result<void> RunningOrderAuthor::create(std::string_view roID, std::string_view roSlug) {
@@ -476,6 +494,24 @@ Result<void> RunningOrderAuthor::setStoryBody(std::string_view roID, std::string
         return imos::makeError(
             imos::ErrorCode::NotFound,
             "unknown story '" + std::string{storyID} + "' in roID '" + std::string{roID} + "'");
+    }
+    if (profile6_ != nullptr && profile6_->rejecting()) {
+        std::vector<imos::profiles::ClassifiedReference> references;
+        for (const XmlNode& child : storyBody.children) {
+            if (!child.isElement("storyItem")) {
+                continue;
+            }
+            imos::profiles::ClassifiedReference reference;
+            reference.storyID = storyID;
+            reference.itemID = child.childText("itemID");
+            reference.objID = child.childText("objID");
+            reference.mosID = child.childText("mosID");
+            reference.locality = profile6_->classify(reference.mosID);
+            references.push_back(std::move(reference));
+        }
+        if (Result<void> accepted = rejectForeign(references); !accepted.ok()) {
+            return accepted;
+        }
     }
     bodies_[std::string{roID}][std::string{storyID}] = AuthoredBody{storyBody, false};
     storySendLinked_.insert(std::string{roID});

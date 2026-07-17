@@ -27,8 +27,8 @@ See the [implementation plan](reference/imaginarymos-implementation-plan.md) for
 the full design, and [docs/coding-standards.md](docs/coding-standards.md) for
 contribution rules.
 
-> **Status: Milestone M4 complete — Profiles 0, 1, 2, 4, 5, and 7 done
-> (Profiles 6 and 3 land next, in M5).** The sans-I/O core (codec for the
+> **Status: Milestone M5 in progress — Profiles 0, 1, 2, 4, 5, 6, and 7
+> done (Profile 3, the finale, closes M5).** The sans-I/O core (codec for the
 > full v4.0 vocabulary, encoding engine, session layer, file store) and the
 > MOS 4.0 WebSocket transports — IXWebSocket client/server with Basic auth,
 > TLS, permessage-deflate, standard & passive topologies, plus the
@@ -50,11 +50,16 @@ contribution rules.
 > at running-order, story, or item scope into a host control sink, with
 > unknown targets escalating to the Profile 2 resync driver; `roItemCue`
 > timed notifications in both directions, including prompter origination
-> addressed to the item's parent MOS), and **Profile 7** (`roReqStoryAction`:
+> addressed to the item's parent MOS), **Profile 7** (`roReqStoryAction`:
 > the device requests story NEW/UPDATE/MOVE/DELETE on the NCS under a
 > time-bounded lease and converges through the ordinary Profile 2/4 echo,
-> never self-applying). Profiles 6 and 3 are next. The public API is not yet
-> stable.
+> never self-applying), and **Profile 6** (MOS Redirection: Fully Qualified
+> MOS ID parse/compose/classify utilities and opt-in enforcement — ingested
+> item references classified as Self / SameEnterprise / Foreign / NotFqid,
+> foreign ones surfaced as `ForeignObjectReferenced` events or NACKed
+> outright, FQID identity enforced at bring-up, all off by default; the
+> object transfer itself stays outside MOS, per the spec). Profile 3 is
+> next. The public API is not yet stable.
 
 ## About MOS Protocol
 

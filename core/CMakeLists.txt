@@ -16,6 +16,7 @@ imos_add_library(core
   EXPORT_BASE  IMOS_CORE
   SOURCES
     version.cpp
+    fqid.cpp
     codec/xml.cpp
     codec/xml_parse.cpp
     codec/message.cpp
@@ -29,6 +30,7 @@ imos_add_library(core
     profiles/profile2.cpp
     profiles/profile4.cpp
     profiles/profile5.cpp
+    profiles/profile6.cpp
     profiles/profile7.cpp
     profiles/running_order_model.cpp
     session/in_memory_store.cpp

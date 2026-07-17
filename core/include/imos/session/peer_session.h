@@ -60,14 +60,17 @@ struct SessionConfig {
 };
 
 enum class SessionEventType : std::uint8_t {
-    MessageReceived,      ///< peer-initiated message for the application
-    AckReceived,          ///< an in-flight exchange completed (carries the reply)
-    DeliveryFailed,       ///< retries exhausted for the identified message
-    ChannelFault,         ///< link-fault escalation after DeliveryFailed
-    DuplicateSuppressed,  ///< peer retry absorbed; not re-delivered
-    ProtocolError,        ///< undecodable/unparseable/mismatched inbound
-    StoreError,           ///< IMessageStore failure (session continues volatile)
-    ResyncNeeded,         ///< §3.3 resync started (posted by the profile layer)
+    MessageReceived,          ///< peer-initiated message for the application
+    AckReceived,              ///< an in-flight exchange completed (carries the reply)
+    DeliveryFailed,           ///< retries exhausted for the identified message
+    ChannelFault,             ///< link-fault escalation after DeliveryFailed
+    DuplicateSuppressed,      ///< peer retry absorbed; not re-delivered
+    ProtocolError,            ///< undecodable/unparseable/mismatched inbound
+    StoreError,               ///< IMessageStore failure (session continues volatile)
+    ResyncNeeded,             ///< §3.3 resync started (posted by the profile layer)
+    ForeignObjectReferenced,  ///< Profile 6: accepted content references an
+                              ///< object on a foreign MOS (posted by the
+                              ///< profile layer; the host arranges transfer)
 };
 
 struct SessionEvent {

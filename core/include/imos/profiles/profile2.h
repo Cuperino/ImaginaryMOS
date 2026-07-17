@@ -30,6 +30,7 @@
 #include <imos/core_export.h>
 #include <imos/error.h>
 #include <imos/profiles/profile1.h>
+#include <imos/profiles/profile6.h>
 #include <imos/profiles/running_order_model.h>
 #include <imos/session/peer_session.h>
 
@@ -129,6 +130,14 @@ public:
     void setObjectSource(IObjectSource* source) noexcept { objects_ = source; }
     void setUnknownObjectPolicy(UnknownObjectPolicy policy) noexcept { objectPolicy_ = policy; }
 
+    /// Attach the facade's Profile 6 classifier (nullptr or inert = no
+    /// behavior change). With it classifying, construction content is
+    /// scanned for foreign mosID references: rejecting NACKs the message
+    /// before it reaches the model or sink; flagging posts one
+    /// ForeignObjectReferenced event per foreign reference once the
+    /// content is accepted.
+    void setProfile6(const Profile6Classifier* classifier) noexcept { profile6_ = classifier; }
+
     [[nodiscard]] RunningOrderModel& model() noexcept { return model_; }
     [[nodiscard]] const RunningOrderModel& model() const noexcept { return model_; }
 
@@ -181,6 +190,7 @@ private:
     RunningOrderModel model_;
     IRunningOrderSink* sink_ = nullptr;
     IObjectSource* objects_ = nullptr;
+    const Profile6Classifier* profile6_ = nullptr;
     UnknownObjectPolicy objectPolicy_ = UnknownObjectPolicy::Accept;
     std::unordered_map<Seq, std::string> pendingResync_;  ///< roReq seq → roID
     std::set<std::string> resyncing_;

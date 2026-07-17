@@ -33,6 +33,7 @@ add_executable(imos_core_test
   codec/message_test.cpp
   codec/legacy_test.cpp
   codec/story_body_test.cpp
+  codec/fqid_test.cpp
   encoding/encoding_test.cpp
   framing/deframer_test.cpp
   profiles/profile0_test.cpp
@@ -71,6 +72,7 @@ add_executable(imos_profile_test
   profiles/profile2_test.cpp
   profiles/profile4_test.cpp
   profiles/profile5_test.cpp
+  profiles/profile6_test.cpp
   profiles/profile7_test.cpp)
 target_link_libraries(imos_profile_test PRIVATE
   GTest::gtest_main

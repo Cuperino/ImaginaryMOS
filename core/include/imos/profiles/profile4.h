@@ -50,6 +50,10 @@ struct StoryView {
     std::string storyNum;
     codec::ResolvedStoryBody body;
     const codec::Message* message = nullptr;  ///< the full roStorySend
+    /// Profile 6: the story's <storyItem> references with their Locality,
+    /// in document order. Empty unless a classifying Profile6Classifier is
+    /// attached (agency payloads stay opaque and are never mined).
+    std::vector<ClassifiedReference> references;
 };
 
 /// Host story consumer (prompter, publishing endpoint, archive…). Invoked
@@ -75,6 +79,13 @@ public:
     /// Attach the host's story consumer. Until one is attached, accepted
     /// stories are only stored (still acked, still queryable).
     void setSink(IStorySink* sink) noexcept { sink_ = sink; }
+
+    /// Attach the facade's Profile 6 classifier (nullptr or inert = no
+    /// behavior change). With it classifying, roStorySend storyItems are
+    /// classified into StoryView::references; rejecting NACKs stories with
+    /// foreign references before storage or sink delivery, flagging posts
+    /// ForeignObjectReferenced events once the story is accepted.
+    void setProfile6(const Profile6Classifier* classifier) noexcept { profile6_ = classifier; }
 
     /// Consume one session event: inbound roStorySend, or the roListAll
     /// completing this responder's roReqAll.
@@ -109,6 +120,7 @@ private:
     PeerSession* session_;
     Profile2Responder* profile2_;
     IStorySink* sink_ = nullptr;
+    const Profile6Classifier* profile6_ = nullptr;
     std::unordered_map<Seq, bool> pendingListAll_;   ///< roReqAll seq → hydrate?
     std::map<std::string, codec::XmlNode> headers_;  ///< roID → verbatim <ro>
     std::map<std::string, std::map<std::string, codec::Message>> stories_;

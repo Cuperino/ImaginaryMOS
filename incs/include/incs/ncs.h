@@ -24,11 +24,13 @@
 #include <vector>
 
 #include <imos/codec/message.h>
+#include <imos/fqid.h>
 #include <imos/profiles/profile0.h>
 #include <imos/profiles/profile1.h>
 #include <imos/profiles/profile2.h>
 #include <imos/profiles/profile4.h>
 #include <imos/profiles/profile5.h>
+#include <imos/profiles/profile6.h>
 #include <imos/session/peer_session.h>
 #include <incs/incs_export.h>
 #include <incs/profile7_ncs.h>
@@ -41,10 +43,24 @@ namespace incs {
 struct NcsConfig {
     imos::SessionConfig session;
     imos::profiles::MachineInfo machineInfo;
+    /// Profile 6 (MOS Redirection), mirrored for authoring-time validation:
+    /// requireFqidSelf enforces the FQID convention on this NCS's ncsID,
+    /// while flag/reject classify authored item references relative to the
+    /// *peer device's* mosID (session.mosID) — an authored reference that is
+    /// Foreign to the device is what would demand an out-of-band transfer.
+    /// All-off by default; gate enabled configs through validateConfig().
+    imos::profiles::Profile6Config profile6{};
 };
 
 class IMOS_INCS_API Ncs {
 public:
+    /// The bring-up gate: with profile6 enabled, this NCS's ncsID must be an
+    /// FQID (identity), and — when flag/reject classification is on — so
+    /// must the peer device's mosID (the classification base). An Ncs built
+    /// from a config this rejects still runs, but with Profile 6 disabled
+    /// and a ProtocolError session event carrying the diagnostic.
+    [[nodiscard]] static imos::Result<void> validateConfig(const NcsConfig& config);
+
     Ncs(NcsConfig config, imos::PeerSession::Dependencies deps);
 
     Ncs(const Ncs&) = delete;
@@ -91,6 +107,13 @@ public:
     /// setAgencyStoryBody() — and the RO becomes story-send-linked. The
     /// device's roAck resolves through author().nextEvent().
     imos::Result<imos::Seq> sendStory(std::string_view roID, std::string_view storyID);
+
+    // Profile 6: MOS Redirection (no messages — FQID classification).
+
+    /// Where an object referenced by `mosID` lives relative to the peer
+    /// device (Locality::NotFqid whenever Profile 6 is not enabled and
+    /// valid) — the authoring-time query behind rejectForeignReferences.
+    [[nodiscard]] imos::Locality classifyMosID(std::string_view mosID) const;
 
     // Profile 5: item control.
 
@@ -141,6 +164,10 @@ public:
 private:
     void dispatch();
 
+    // Declared (and thus initialized) before session_: the classifier is
+    // armed from the config before the session moves it away.
+    imos::profiles::Profile6Classifier profile6_;
+    std::optional<imos::Error> profile6Error_;  ///< bring-up diagnostic, posted once
     imos::PeerSession session_;
     imos::profiles::Profile0Responder profile0_;
     imos::profiles::ObjectDirectory directory_;

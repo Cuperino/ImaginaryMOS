@@ -23,12 +23,14 @@
 #include <string_view>
 #include <vector>
 
+#include <imos/fqid.h>
 #include <imos/imos_export.h>
 #include <imos/profiles/profile0.h>
 #include <imos/profiles/profile1.h>
 #include <imos/profiles/profile2.h>
 #include <imos/profiles/profile4.h>
 #include <imos/profiles/profile5.h>
+#include <imos/profiles/profile6.h>
 #include <imos/profiles/profile7.h>
 #include <imos/profiles/running_order_model.h>
 #include <imos/session/peer_session.h>
@@ -44,10 +46,24 @@ struct DeviceConfig {
     /// NCS for every MOS-active RO (roReqAll) and fetch each one into the
     /// shadow model, so a cold-started device converges without host code.
     bool hydrateRunningOrdersOnConnect = false;
+    /// Profile 6 (MOS Redirection): FQID identity enforcement and foreign-
+    /// reference classification, relative to session.mosID. All-off by
+    /// default — nothing changes for non-claiming devices. Gate enabled
+    /// configs through Device::validateConfig() at bring-up; when enabled
+    /// and valid, listMachInfo advertises Profile 6.
+    profiles::Profile6Config profile6{};
 };
 
 class IMOS_IMOS_API Device {
 public:
+    /// The bring-up gate (Profile 6 identity enforcement): fails with a
+    /// clear diagnostic when config.profile6 is enabled but session.mosID
+    /// is not a Fully Qualified MOS ID. Check before constructing —
+    /// misconfiguration should be caught at bring-up, not on air. A Device
+    /// built from a config this rejects still runs, but with Profile 6
+    /// disabled and a ProtocolError session event carrying the diagnostic.
+    [[nodiscard]] static Result<void> validateConfig(const DeviceConfig& config);
+
     Device(DeviceConfig config, PeerSession::Dependencies deps);
 
     Device(const Device&) = delete;
@@ -96,6 +112,14 @@ public:
     [[nodiscard]] const codec::Message* story(std::string_view roID,
                                               std::string_view storyID) const;
     [[nodiscard]] std::vector<std::string> storyIDs(std::string_view roID) const;
+
+    // Profile 6: MOS Redirection (no messages — FQID classification).
+
+    /// Where an object referenced by `mosID` lives relative to this device
+    /// (Locality::NotFqid whenever Profile 6 is not enabled and valid).
+    /// Ingested foreign references also surface as ForeignObjectReferenced
+    /// events and StoryView::references when the config flags them.
+    [[nodiscard]] Locality classifyMosID(std::string_view mosID) const;
 
     // Profile 5: item control (roCtrl in, roItemCue both ways).
 
@@ -164,6 +188,10 @@ public:
 private:
     void dispatch();
 
+    // Declared (and thus initialized) before session_: the classifier is
+    // armed from config.session.mosID before the session moves it away.
+    profiles::Profile6Classifier profile6_;
+    std::optional<Error> profile6Error_;  ///< bring-up diagnostic, posted once
     PeerSession session_;
     profiles::Profile0Responder profile0_;
     profiles::Profile1Responder profile1_;

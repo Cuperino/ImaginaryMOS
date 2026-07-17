@@ -39,6 +39,7 @@
 #include <imos/codec/message.h>
 #include <imos/error.h>
 #include <imos/profiles/profile2.h>
+#include <imos/profiles/profile6.h>
 #include <imos/profiles/running_order_model.h>
 #include <imos/session/peer_session.h>
 #include <incs/incs_export.h>
@@ -66,6 +67,14 @@ public:
 
     explicit RunningOrderAuthor(imos::PeerSession* session);
     RunningOrderAuthor(imos::PeerSession* session, Config config);
+
+    /// Attach the facade's Profile 6 classifier (nullptr or inert = no
+    /// behavior change). With rejectForeignReferences armed, edits and
+    /// story bodies that reference an object Foreign to the peer device
+    /// fail at authoring time instead of NACKing on air.
+    void setProfile6(const imos::profiles::Profile6Classifier* classifier) noexcept {
+        profile6_ = classifier;
+    }
 
     // ---- desired-state editing (validated like the device would) --------
 
@@ -193,9 +202,14 @@ private:
     };
 
     imos::Result<void> applyEdit(const imos::codec::Message& message);
+    /// Profile 6 authoring-time gate: the first reference Foreign to the
+    /// peer device, as an InvalidArgument error (ok when not rejecting).
+    imos::Result<void> rejectForeign(
+        const std::vector<imos::profiles::ClassifiedReference>& references) const;
 
     imos::PeerSession* session_;
     Config config_;
+    const imos::profiles::Profile6Classifier* profile6_ = nullptr;
     imos::profiles::RunningOrderModel desired_;
     std::unordered_map<std::string, DeviceRo> device_;
     std::unordered_map<imos::Seq, std::string> pending_;  ///< seq → roID

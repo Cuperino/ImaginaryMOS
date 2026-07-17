@@ -9,16 +9,54 @@ namespace incs {
 
 namespace {
 
-imos::profiles::MachineInfo asNcs(imos::profiles::MachineInfo info) {
+imos::profiles::MachineInfo asNcs(imos::profiles::MachineInfo info, bool claimsProfile6) {
     info.deviceType = imos::profiles::DeviceType::Ncs;
+    if (claimsProfile6) {
+        info.profiles[6] = true;
+    }
     return info;
+}
+
+std::optional<imos::Error> armProfile6(imos::profiles::Profile6Classifier& classifier,
+                                       const NcsConfig& config) {
+    imos::Result<void> valid = Ncs::validateConfig(config);
+    if (!valid.ok()) {
+        return std::move(valid).error();
+    }
+    // Classification is relative to the peer device: an authored reference
+    // that is Foreign to it is what would demand an out-of-band transfer.
+    // An identity-only config (requireFqidSelf alone) arms nothing — its
+    // peer need not be an FQID device.
+    if (config.profile6.flagForeignReferences || config.profile6.rejectForeignReferences) {
+        (void)classifier.configure(config.profile6, config.session.mosID);  // validated above
+    }
+    return std::nullopt;
 }
 
 }  // namespace
 
+imos::Result<void> Ncs::validateConfig(const NcsConfig& config) {
+    if (!config.profile6.enabled()) {
+        return {};
+    }
+    // Identity: the spec's FQID convention covers ncsIDs too.
+    if (imos::Result<void> self =
+            imos::profiles::validateProfile6Identity(config.profile6, config.session.ncsID);
+        !self.ok()) {
+        return self;
+    }
+    if (config.profile6.flagForeignReferences || config.profile6.rejectForeignReferences) {
+        return imos::profiles::validateProfile6Identity(config.profile6, config.session.mosID);
+    }
+    return {};
+}
+
 Ncs::Ncs(NcsConfig config, imos::PeerSession::Dependencies deps)
-    : session_(std::move(config.session), deps),
-      profile0_(asNcs(std::move(config.machineInfo)), &session_, deps.clock),
+    : profile6Error_(armProfile6(profile6_, config)),
+      session_(std::move(config.session), deps),
+      profile0_(asNcs(std::move(config.machineInfo),
+                      !profile6Error_.has_value() && config.profile6.enabled()),
+                &session_, deps.clock),
       directory_(&session_, deps.clock),
       author_(&session_),
       profile2_(&session_, deps.clock),
@@ -27,6 +65,19 @@ Ncs::Ncs(NcsConfig config, imos::PeerSession::Dependencies deps)
       profile7_(&author_, &defaultLeasePolicy_, &profile0_, &session_, deps.clock) {
     profile2_.setSource(&author_);           // roReq is answered from the authoring store
     profile4_.setStore(&author_.desired());  // roReqAll enumerates the same store
+    author_.setProfile6(&profile6_);         // authoring-time foreign-reference rejection
+    if (profile6Error_.has_value()) {
+        // Defense in depth for hosts that skipped validateConfig(): run
+        // without Profile 6 and surface the bring-up diagnostic once.
+        imos::SessionEvent event;
+        event.type = imos::SessionEventType::ProtocolError;
+        event.diagnostic = profile6Error_->message;
+        session_.postEvent(std::move(event));
+    }
+}
+
+imos::Locality Ncs::classifyMosID(std::string_view mosID) const {
+    return profile6_.classify(mosID);
 }
 
 void Ncs::onChannelConnected(imos::Channel channel) {

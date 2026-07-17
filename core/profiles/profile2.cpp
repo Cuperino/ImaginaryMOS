@@ -255,6 +255,23 @@ void Profile2Responder::handleConstruction(const SessionEvent& event) {
     const codec::Message& message = event.message;
     const std::string roID = messageRoID(message);
 
+    // Profile 6: scan new content for foreign mosID references before any
+    // state can change; rejecting turns the message into a NACK outright.
+    std::vector<ClassifiedReference> references;
+    if (profile6_ != nullptr && profile6_->classifying()) {
+        references = profile6_->collectReferences(message);
+        if (profile6_->rejecting()) {
+            if (const ClassifiedReference* foreign = Profile6Classifier::firstForeign(references)) {
+                codec::Message ack =
+                    buildRoAck(roID, "NACK: foreign object reference '" + foreign->mosID +
+                                         "' (objID '" + foreign->objID + "')");
+                codec::echoMessageID(message, ack);
+                (void)session_->enqueueReply(event.channel, std::move(ack));
+                return;
+            }
+        }
+    }
+
     if (sink_ != nullptr) {
         // Raw mode: the host owns state and resync; we only run the ack.
         Result<void> outcome = dispatchToSink(message);
@@ -262,6 +279,9 @@ void Profile2Responder::handleConstruction(const SessionEvent& event) {
             buildRoAck(roID, outcome.ok() ? std::string{"OK"} : "NACK: " + outcome.error().message);
         codec::echoMessageID(message, ack);
         (void)session_->enqueueReply(event.channel, std::move(ack));
+        if (outcome.ok() && profile6_ != nullptr) {
+            profile6_->announceForeign(*session_, event.channel, roID, references);
+        }
         return;
     }
 
@@ -290,6 +310,9 @@ void Profile2Responder::handleConstruction(const SessionEvent& event) {
     (void)session_->enqueueReply(event.channel, std::move(ack));
 
     if (outcome.ok()) {
+        if (profile6_ != nullptr) {
+            profile6_->announceForeign(*session_, event.channel, roID, references);
+        }
         if (message.type() == codec::MessageType::RoElementStat) {
             if (Result<ElementStatusReport> report = parseRoElementStat(message); report.ok()) {
                 statusEvents_.push_back(std::move(report).value());

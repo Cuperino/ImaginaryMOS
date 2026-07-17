@@ -87,6 +87,20 @@ void Profile4Responder::handleStorySend(const SessionEvent& event) {
         return;
     }
 
+    // Profile 6: classify the story's item references before storage; a
+    // rejecting classifier turns a foreign reference into the NACK itself.
+    std::vector<ClassifiedReference> references;
+    if (profile6_ != nullptr && profile6_->classifying()) {
+        references = profile6_->collectReferences(message);
+        if (profile6_->rejecting()) {
+            if (const ClassifiedReference* foreign = Profile6Classifier::firstForeign(references)) {
+                nack("foreign object reference '" + foreign->mosID + "' (objID '" + foreign->objID +
+                     "')");
+                return;
+            }
+        }
+    }
+
     // Replace-on-resend: the stored message is the retained original, so the
     // sink's view and later story() queries see identical verbatim content.
     codec::Message& stored = stories_[roID][storyID] = message;
@@ -99,6 +113,7 @@ void Profile4Responder::handleStorySend(const SessionEvent& event) {
         view.storyNum = stored.body()->childText("storyNum");
         view.body = codec::resolveStoryBody(stored).value();  // resolved above
         view.message = &stored;
+        view.references = references;
         if (Result<void> accepted = sink_->onStory(view); !accepted.ok()) {
             eraseStory(roID, storyID);  // rejected content is not retained
             nack(accepted.error().message);
@@ -109,6 +124,9 @@ void Profile4Responder::handleStorySend(const SessionEvent& event) {
     codec::Message ack = buildRoAck(roID, "OK");
     codec::echoMessageID(message, ack);
     (void)session_->enqueueReply(event.channel, std::move(ack));
+    if (profile6_ != nullptr) {
+        profile6_->announceForeign(*session_, event.channel, roID, references);
+    }
 }
 
 Result<Seq> Profile4Responder::requestAllRunningOrders(bool hydrate) {

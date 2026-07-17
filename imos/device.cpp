@@ -10,22 +10,51 @@ namespace imos {
 
 namespace {
 
-profiles::MachineInfo asDevice(profiles::MachineInfo info) {
+profiles::MachineInfo asDevice(profiles::MachineInfo info, bool claimsProfile6) {
     info.deviceType = profiles::DeviceType::Mos;
+    if (claimsProfile6) {
+        info.profiles[6] = true;
+    }
     return info;
+}
+
+std::optional<Error> armProfile6(profiles::Profile6Classifier& classifier,
+                                 const DeviceConfig& config) {
+    Result<void> armed = classifier.configure(config.profile6, config.session.mosID);
+    if (armed.ok()) {
+        return std::nullopt;
+    }
+    return std::move(armed).error();
 }
 
 }  // namespace
 
+Result<void> Device::validateConfig(const DeviceConfig& config) {
+    return profiles::validateProfile6Identity(config.profile6, config.session.mosID);
+}
+
 Device::Device(DeviceConfig config, PeerSession::Dependencies deps)
-    : session_(std::move(config.session), deps),
-      profile0_(asDevice(std::move(config.machineInfo)), &session_, deps.clock),
+    : profile6Error_(armProfile6(profile6_, config)),
+      session_(std::move(config.session), deps),
+      profile0_(asDevice(std::move(config.machineInfo), profile6_.config().enabled()), &session_,
+                deps.clock),
       profile1_(nullptr, &session_, deps.clock),
       profile2_(&session_, deps.clock),
       profile4_(&session_, &profile2_),
       profile5_(&session_, &profile2_),
       profile7_(&session_),
-      hydrateOnConnect_(config.hydrateRunningOrdersOnConnect) {}
+      hydrateOnConnect_(config.hydrateRunningOrdersOnConnect) {
+    profile2_.setProfile6(&profile6_);
+    profile4_.setProfile6(&profile6_);
+    if (profile6Error_.has_value()) {
+        // Defense in depth for hosts that skipped validateConfig(): run
+        // without Profile 6 and surface the bring-up diagnostic once.
+        SessionEvent event;
+        event.type = SessionEventType::ProtocolError;
+        event.diagnostic = profile6Error_->message;
+        session_.postEvent(std::move(event));
+    }
+}
 
 void Device::attach(profiles::IObjectSource& source) {
     profile1_.setSource(&source);
@@ -54,6 +83,10 @@ profiles::RunningOrderModel& Device::runningOrderModel() noexcept {
 
 const profiles::RunningOrderModel& Device::runningOrderModel() const noexcept {
     return profile2_.model();
+}
+
+Locality Device::classifyMosID(std::string_view mosID) const {
+    return profile6_.classify(mosID);
 }
 
 void Device::onChannelConnected(Channel channel) {
