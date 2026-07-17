@@ -308,6 +308,42 @@ TEST(Profile2, ElementStatusRoundTripsBothDirections) {
     EXPECT_TRUE(fx.ncs->session().channelIdle(Channel::Ro));
 }
 
+// 5b. The NCS host observes its session through Ncs::nextEvent() — the
+//     drain mirroring imos::Device::nextEvent(). The roAck completing its
+//     own sendElementStat exchange resolves there (no responder consumes
+//     it), and an undecodable inbound frame surfaces as a ProtocolError
+//     instead of accumulating invisibly.
+TEST(Profile2, NcsSessionEventsSurfaceThroughTheFacadeDrain) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    convergeBaseRo(fx, "RO1");
+    while (fx.ncs->nextEvent().has_value()) {  // discard convergence-era events
+    }
+
+    ElementStatusReport standby;
+    standby.element = RoElement::RunningOrder;
+    standby.roID = "RO1";
+    standby.status = "STANDBY";
+    ASSERT_TRUE(fx.ncs->sendElementStat(standby).ok());
+    fx.settle();
+
+    bool acked = false;
+    while (std::optional<imos::SessionEvent> event = fx.ncs->nextEvent()) {
+        if (event->type == imos::SessionEventType::AckReceived &&
+            event->message.type() == MessageType::RoAck) {
+            acked = !imos::profiles::roAckIsNack(event->message);
+        }
+    }
+    EXPECT_TRUE(acked);
+
+    fx.ncs->onFrameReceived(Channel::Ro, encode("this is not a mos document"));
+    bool protocolError = false;
+    while (std::optional<imos::SessionEvent> event = fx.ncs->nextEvent()) {
+        protocolError |= event->type == imos::SessionEventType::ProtocolError;
+    }
+    EXPECT_TRUE(protocolError);
+}
+
 // 6. Resync (§3.3): a device that lost its shadow state sees actions for an
 //    unknown roID → exactly one ResyncNeeded, one roReq/roList rebuild, and
 //    subsequent actions apply cleanly. Two commits are in flight during the

@@ -89,7 +89,7 @@ std::string objStatus(const Message& mosObj) {
 
 std::vector<DirectoryEvent> drainDirectory(incs::Ncs& ncs) {
     std::vector<DirectoryEvent> events;
-    while (std::optional<DirectoryEvent> event = ncs.nextEvent()) {
+    while (std::optional<DirectoryEvent> event = ncs.nextDirectoryEvent()) {
         events.push_back(std::move(*event));
     }
     return events;

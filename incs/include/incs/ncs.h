@@ -71,7 +71,7 @@ public:
     [[nodiscard]] std::vector<std::string> objectIDs() const;
 
     /// Next high-level directory change (ingest/delete/miss/sync-start).
-    [[nodiscard]] std::optional<imos::profiles::DirectoryEvent> nextEvent();
+    [[nodiscard]] std::optional<imos::profiles::DirectoryEvent> nextDirectoryEvent();
 
     // Profile 2 running orders.
 
@@ -122,6 +122,13 @@ public:
 
     /// Next ingested device-originated roElementStat, in arrival order.
     [[nodiscard]] std::optional<imos::profiles::ElementStatusReport> nextElementStatus();
+
+    /// Next session event the responders did not consume — acks for the
+    /// NCS's own sends (e.g. sendElementStat), delivery failures and
+    /// channel faults (§3.3 link-fault escalation the host must observe),
+    /// duplicate suppressions, and protocol/store errors — in arrival
+    /// order. Mirrors imos::Device::nextEvent().
+    [[nodiscard]] std::optional<imos::SessionEvent> nextEvent();
 
     /// Direct session access for host transport glue (e.g. pump()).
     [[nodiscard]] imos::PeerSession& session() noexcept { return session_; }

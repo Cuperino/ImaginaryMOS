@@ -82,8 +82,17 @@ std::vector<std::string> Ncs::objectIDs() const {
     return directory_.objectIDs();
 }
 
-std::optional<imos::profiles::DirectoryEvent> Ncs::nextEvent() {
+std::optional<imos::profiles::DirectoryEvent> Ncs::nextDirectoryEvent() {
     return directory_.nextEvent();
+}
+
+std::optional<imos::SessionEvent> Ncs::nextEvent() {
+    if (appEvents_.empty()) {
+        return std::nullopt;
+    }
+    imos::SessionEvent event = std::move(appEvents_.front());
+    appEvents_.pop_front();
+    return event;
 }
 
 imos::Result<imos::Seq> Ncs::sendStory(std::string_view roID, std::string_view storyID) {

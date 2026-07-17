@@ -521,7 +521,7 @@ TEST(Ws40Transport, Profile1ObjectWorkflowOverWebSocket) {
             }
         }
         ncs.poll();
-        while (auto directoryEvent = ncs.nextEvent()) {
+        while (auto directoryEvent = ncs.nextDirectoryEvent()) {
             dirEvents.push_back(std::move(*directoryEvent));
         }
     };
