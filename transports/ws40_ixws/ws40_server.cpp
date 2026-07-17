@@ -24,6 +24,12 @@ std::string peerKeyOf(std::string_view mosID, std::string_view ncsID) {
     return std::string{mosID} + "|" + std::string{ncsID};
 }
 
+/// The ephemeral probe has to close its socket before the listener can bind
+/// the port, so a racing process can steal it in between; a few retries make
+/// that vanishingly unlikely without ever blocking.
+constexpr int kEphemeralBindAttempts = 8;
+constexpr int kMaxPort = 65535;
+
 }  // namespace
 
 bool FixedCredentialVerifier::verify(std::string_view username,
@@ -105,10 +111,11 @@ struct Ws40Server::Impl {
         encoding::WireEncoding wireEncoding = encoding::WireEncoding::Ucs2Be;
     };
 
-    ServerConfig config;
+    ServerConfig config;  ///< as configured; never rewritten by start()
     ILogger* logger = nullptr;
     std::unique_ptr<ix::WebSocketServer> server;
     bool started = false;
+    int boundPort = 0;  ///< what start() actually bound (0 until it succeeds)
 
     mutable std::mutex mutex;  // guards peers map, claims, and the queue
     std::map<std::string, Peer> peers;
@@ -248,6 +255,65 @@ struct Ws40Server::Impl {
         }
         enqueue(std::move(event));
     }
+
+    /// One bind-and-listen attempt on `port`: a fresh ix server carrying the
+    /// configured options and the connection callback. False leaves no
+    /// server behind.
+    bool listenOn(int port) {
+        server = std::make_unique<ix::WebSocketServer>(
+            port, config.host, ix::SocketServer::kDefaultTcpBacklog, config.maxConnections,
+            config.handshakeTimeoutSecs);
+        if (!config.enableDeflate) {
+            server->disablePerMessageDeflate();
+        }
+        if (config.tls.enabled) {
+            server->setTLSOptions(detail::makeSocketTlsOptions(config.tls, /*serverSide=*/true));
+        }
+
+        server->setOnConnectionCallback([this](std::weak_ptr<ix::WebSocket> weakSocket,
+                                               std::shared_ptr<ix::ConnectionState> /*state*/) {
+            const std::shared_ptr<ix::WebSocket> socket = weakSocket.lock();
+            if (socket == nullptr) {
+                return;
+            }
+            // One shared Claim per connection, filled on Open. The callback
+            // for a given socket runs on that socket's own thread, so no
+            // lock is needed around the claim itself.
+            auto claim = std::make_shared<std::optional<Claim>>();
+            socket->setOnMessageCallback(
+                [this, weakSocket, claim](const ix::WebSocketMessagePtr& msg) {
+                    const std::shared_ptr<ix::WebSocket> live = weakSocket.lock();
+                    if (live == nullptr) {
+                        return;
+                    }
+                    switch (msg->type) {
+                        case ix::WebSocketMessageType::Open:
+                            *claim = validateOpen(live, msg->openInfo);
+                            break;
+                        case ix::WebSocketMessageType::Message:
+                            if (claim->has_value()) {
+                                onFrame(**claim, msg->str, msg->binary);
+                            }
+                            break;
+                        case ix::WebSocketMessageType::Close:
+                        case ix::WebSocketMessageType::Error:
+                            if (claim->has_value()) {
+                                releaseClaim(**claim, live);
+                                claim->reset();
+                            }
+                            break;
+                        default:
+                            break;
+                    }
+                });
+        });
+
+        if (const auto listening = server->listenAndStart(); !listening) {
+            server.reset();
+            return false;
+        }
+        return true;
+    }
 };
 
 Ws40Server::Ws40Server(ServerConfig config, ILogger* logger) : impl_(std::make_unique<Impl>()) {
@@ -279,85 +345,36 @@ Result<void> Ws40Server::start() {
     if (impl_->started) {
         return makeError(ErrorCode::WrongState, "server already started");
     }
+    if (impl_->config.port < 0 || impl_->config.port > kMaxPort) {
+        return makeError(ErrorCode::InvalidArgument,
+                         "port out of range: " + std::to_string(impl_->config.port));
+    }
     // config.port == 0 asks for a kernel-assigned ephemeral port. IXWebSocket
     // can bind port 0 but keeps the kernel's choice private, so the port is
     // probed here (bind 0 → getsockname → close) and the listen retried:
     // another process can claim the probed port between the probe socket
-    // closing and the listener binding it.
-    const bool ephemeral = impl_->config.port == 0;
-    const int maxAttempts = ephemeral ? 8 : 1;
-    for (int attempt = 0; attempt < maxAttempts; ++attempt) {
-        const int port = ephemeral ? ix::getFreePort() : impl_->config.port;
-        if (port <= 0) {
-            continue;  // probe failed outright; re-probe
-        }
-        if (listenOn(port)) {
-            impl_->config.port = port;
+    // closing and the listener binding it. The resolution is sticky rather
+    // than per-start — a restart has to return to the same address, since
+    // clients (and the passive topology's held connections) are still aimed
+    // at it — so it is remembered in boundPort and config stays as configured.
+    const int requested = impl_->boundPort != 0 ? impl_->boundPort : impl_->config.port;
+    const bool ephemeral = requested == 0;
+    const int attempts = ephemeral ? kEphemeralBindAttempts : 1;
+    for (int attempt = 0; attempt < attempts; ++attempt) {
+        const int port = ephemeral ? ix::getFreePort() : requested;
+        if (port > 0 && impl_->listenOn(port)) {
+            impl_->boundPort = port;
             impl_->started = true;
             return {};
         }
     }
-    return makeError(
-        ErrorCode::IoError,
-        "ws40 server failed to listen on " + impl_->config.host + ":" +
-            (ephemeral ? std::string{"<ephemeral>"} : std::to_string(impl_->config.port)));
-}
-
-bool Ws40Server::listenOn(int port) {
-    impl_->server = std::make_unique<ix::WebSocketServer>(
-        port, impl_->config.host, ix::SocketServer::kDefaultTcpBacklog,
-        impl_->config.maxConnections, impl_->config.handshakeTimeoutSecs);
-    if (!impl_->config.enableDeflate) {
-        impl_->server->disablePerMessageDeflate();
+    if (ephemeral) {
+        return makeError(ErrorCode::IoError, "ws40 server failed to claim an ephemeral port on " +
+                                                 impl_->config.host + " after " +
+                                                 std::to_string(attempts) + " attempts");
     }
-    if (impl_->config.tls.enabled) {
-        impl_->server->setTLSOptions(
-            detail::makeSocketTlsOptions(impl_->config.tls, /*serverSide=*/true));
-    }
-
-    Impl* impl = impl_.get();
-    impl_->server->setOnConnectionCallback([impl](std::weak_ptr<ix::WebSocket> weakSocket,
-                                                  std::shared_ptr<ix::ConnectionState> /*state*/) {
-        const std::shared_ptr<ix::WebSocket> socket = weakSocket.lock();
-        if (socket == nullptr) {
-            return;
-        }
-        // One shared Claim per connection, filled on Open. The callback
-        // for a given socket runs on that socket's own thread, so no
-        // lock is needed around the claim itself.
-        auto claim = std::make_shared<std::optional<Impl::Claim>>();
-        socket->setOnMessageCallback([impl, weakSocket, claim](const ix::WebSocketMessagePtr& msg) {
-            const std::shared_ptr<ix::WebSocket> live = weakSocket.lock();
-            if (live == nullptr) {
-                return;
-            }
-            switch (msg->type) {
-                case ix::WebSocketMessageType::Open:
-                    *claim = impl->validateOpen(live, msg->openInfo);
-                    break;
-                case ix::WebSocketMessageType::Message:
-                    if (claim->has_value()) {
-                        impl->onFrame(**claim, msg->str, msg->binary);
-                    }
-                    break;
-                case ix::WebSocketMessageType::Close:
-                case ix::WebSocketMessageType::Error:
-                    if (claim->has_value()) {
-                        impl->releaseClaim(**claim, live);
-                        claim->reset();
-                    }
-                    break;
-                default:
-                    break;
-            }
-        });
-    });
-
-    if (const auto listening = impl_->server->listenAndStart(); !listening) {
-        impl_->server.reset();
-        return false;
-    }
-    return true;
+    return makeError(ErrorCode::IoError, "ws40 server failed to listen on " + impl_->config.host +
+                                             ":" + std::to_string(requested));
 }
 
 void Ws40Server::stop() {
@@ -369,7 +386,9 @@ void Ws40Server::stop() {
 }
 
 int Ws40Server::port() const {
-    return impl_->server != nullptr ? impl_->server->getPort() : impl_->config.port;
+    // start() always binds a concrete port, so boundPort is the answer once
+    // it has succeeded (and survives stop()); before that, only the request.
+    return impl_->boundPort != 0 ? impl_->boundPort : impl_->config.port;
 }
 
 ITransport& Ws40Server::transportFor(std::string_view mosID, std::string_view ncsID) {

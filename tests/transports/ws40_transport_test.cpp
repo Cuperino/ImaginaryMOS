@@ -340,6 +340,36 @@ TEST(Ws40Transport, BasicAuthAcceptAndReject) {
         [&] { return findAck(rig.deviceEvents, MessageType::ListMachInfo) != nullptr; }));
 }
 
+// The ServerConfig ephemeral contract: port == 0 resolves a free port on the
+// first start(), port() reports it, and the resolution is sticky — a restart
+// returns to the same address rather than re-probing, because clients are
+// still aimed at it (PassiveTopology…Reconnects leans on exactly this).
+TEST(Ws40Transport, EphemeralPortIsResolvedOnceThenSticky) {
+    ServerConfig config;
+    config.host = "127.0.0.1";
+    Ws40Server server{config};
+    ASSERT_TRUE(server.start().ok());
+    const int first = server.port();
+    EXPECT_GT(first, 0);
+
+    server.stop();
+    EXPECT_EQ(server.port(), first);  // the binding stays reportable when stopped
+
+    ASSERT_TRUE(server.start().ok());
+    EXPECT_EQ(server.port(), first);
+    server.stop();
+}
+
+TEST(Ws40Transport, StartRejectsAnOutOfRangePort) {
+    ServerConfig config;
+    config.host = "127.0.0.1";
+    config.port = -1;
+    Ws40Server server{config};
+    const auto started = server.start();
+    ASSERT_FALSE(started.ok());
+    EXPECT_EQ(started.error().code, imos::ErrorCode::InvalidArgument);
+}
+
 TEST(Ws40Transport, DuplicateChannelClaimIsRejected) {
     Rig rig;
     rig.startServer();

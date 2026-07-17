@@ -95,8 +95,8 @@ Result<Seq> Device::announceObject(codec::Message mosObj) {
     return profile1_.announceObject(std::move(mosObj));
 }
 
-Result<Seq> Device::requestMachineInfo() {
-    return profile0_.requestMachineInfo();
+Result<Seq> Device::requestMachineInfo(Channel channel) {
+    return profile0_.requestMachineInfo(channel);
 }
 
 const profiles::PeerMachineInfo* Device::peerMachineInfo() const {

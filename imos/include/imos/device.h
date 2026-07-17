@@ -137,8 +137,10 @@ public:
     Result<Seq> announceObject(codec::Message mosObj);
 
     /// Request the peer's machine info (Profile 0). The reply is captured in
-    /// peerMachineInfo() when it arrives.
-    Result<Seq> requestMachineInfo();
+    /// peerMachineInfo() when it arrives. The spec (§4.1.3) homes reqMachInfo
+    /// on both legacy MOS ports — mom (10540) and ro (10541) — so the caller
+    /// picks the channel; Mom is the conventional default.
+    Result<Seq> requestMachineInfo(Channel channel = Channel::Mom);
     /// The peer's declared machine info, parsed from its listMachInfo (or
     /// nullptr when never received or parsing failed).
     [[nodiscard]] const profiles::PeerMachineInfo* peerMachineInfo() const;

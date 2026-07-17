@@ -61,7 +61,12 @@ public:
     [[nodiscard]] std::optional<imos::MonotonicTime> nextDeadline() const;
 
     // Profile 0: machine info.
-    imos::Result<imos::Seq> requestMachineInfo();
+
+    /// Request the peer's machine info; the reply lands in peerMachineInfo().
+    /// The spec (§4.1.3) homes reqMachInfo on both legacy MOS ports — mom
+    /// (10540) and ro (10541) — so the caller picks the channel; Mom is the
+    /// conventional default.
+    imos::Result<imos::Seq> requestMachineInfo(imos::Channel channel = imos::Channel::Mom);
     [[nodiscard]] const imos::profiles::PeerMachineInfo* peerMachineInfo() const;
 
     // Profile 1 object directory.

@@ -52,8 +52,8 @@ std::optional<imos::MonotonicTime> Ncs::nextDeadline() const {
     return session_.nextDeadline();
 }
 
-imos::Result<imos::Seq> Ncs::requestMachineInfo() {
-    imos::Result<imos::Seq> seq = profile0_.requestMachineInfo();
+imos::Result<imos::Seq> Ncs::requestMachineInfo(imos::Channel channel) {
+    imos::Result<imos::Seq> seq = profile0_.requestMachineInfo(channel);
     dispatch();
     return seq;
 }
