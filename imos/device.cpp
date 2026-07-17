@@ -23,6 +23,7 @@ Device::Device(DeviceConfig config, PeerSession::Dependencies deps)
       profile1_(nullptr, &session_, deps.clock),
       profile2_(&session_, deps.clock),
       profile4_(&session_, &profile2_),
+      profile7_(&session_),
       hydrateOnConnect_(config.hydrateRunningOrdersOnConnect) {}
 
 void Device::attach(profiles::IObjectSource& source) {
@@ -89,6 +90,14 @@ Result<Seq> Device::announceObject(codec::Message mosObj) {
     return profile1_.announceObject(std::move(mosObj));
 }
 
+Result<Seq> Device::requestMachineInfo() {
+    return profile0_.requestMachineInfo();
+}
+
+const profiles::PeerMachineInfo* Device::peerMachineInfo() const {
+    return profile0_.peerMachineInfo();
+}
+
 Result<Seq> Device::reportElementStatus(const profiles::ElementStatusReport& report) {
     return profile2_.sendElementStat(report);
 }
@@ -113,6 +122,14 @@ std::vector<std::string> Device::storyIDs(std::string_view roID) const {
     return profile4_.storyIDs(roID);
 }
 
+Result<Seq> Device::requestStoryAction(const profiles::StoryActionRequest& request) {
+    return profile7_.requestStoryAction(request);
+}
+
+std::optional<profiles::StoryActionResult> Device::nextStoryActionResult() {
+    return profile7_.nextResult();
+}
+
 std::optional<profiles::ElementStatusReport> Device::nextElementStatus() {
     return profile2_.nextStatus();
 }
@@ -129,7 +146,7 @@ std::optional<SessionEvent> Device::nextEvent() {
 void Device::dispatch() {
     while (std::optional<SessionEvent> event = session_.nextEvent()) {
         if (profile0_.handle(*event) || profile1_.handle(*event) || profile2_.handle(*event) ||
-            profile4_.handle(*event)) {
+            profile4_.handle(*event) || profile7_.handle(*event)) {
             continue;
         }
         appEvents_.push_back(std::move(*event));

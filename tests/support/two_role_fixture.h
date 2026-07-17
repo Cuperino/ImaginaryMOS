@@ -34,6 +34,10 @@ struct TwoRoleFixture {
     struct Options {
         imos::encoding::WireEncoding wireEncoding = imos::encoding::WireEncoding::Ucs2Be;
         bool hydrateRunningOrdersOnConnect = false;
+        /// Whether the MOS advertises Profile 7 in its listMachInfo. Defaults
+        /// on (the device implements it); flip off to exercise the NCS's
+        /// strict capability gating for roReqStoryAction.
+        bool advertiseProfile7 = true;
     };
 
     FakeClock clock;
@@ -51,6 +55,9 @@ struct TwoRoleFixture {
         imos::DeviceConfig deviceConfig{sessionConfig(options.wireEncoding),
                                         machineInfo(imos::profiles::DeviceType::Mos)};
         deviceConfig.hydrateRunningOrdersOnConnect = options.hydrateRunningOrdersOnConnect;
+        if (!options.advertiseProfile7) {
+            deviceConfig.machineInfo.profiles[7] = false;
+        }
         device = std::make_unique<imos::Device>(
             std::move(deviceConfig),
             imos::PeerSession::Dependencies{&clock, &deviceTransport, &deviceStore, nullptr,
@@ -82,7 +89,7 @@ struct TwoRoleFixture {
         info.swRev = "1.0.0";
         info.id = type == imos::profiles::DeviceType::Mos ? kMosID : kNcsID;
         info.deviceType = type;
-        info.profiles = {true, true, true, false, true, false, false, false};
+        info.profiles = {true, true, true, false, true, false, false, true};
         return info;
     }
 

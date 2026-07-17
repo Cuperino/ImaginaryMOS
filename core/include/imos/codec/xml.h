@@ -63,6 +63,12 @@ struct XmlNode {
 
     [[nodiscard]] IMOS_CORE_API XmlNode* firstChildElement(std::string_view childName);
     [[nodiscard]] IMOS_CORE_API const XmlNode* firstChildElement(std::string_view childName) const;
+
+    /// The text() of the first child element named `childName`, or "" when no
+    /// such child exists (the owning "text or empty" convenience the profile
+    /// layers reach for; cf. detail::childText, which returns an optional view
+    /// for the generated typed views).
+    [[nodiscard]] IMOS_CORE_API std::string childText(std::string_view childName) const;
     [[nodiscard]] IMOS_CORE_API std::size_t countChildElements(std::string_view childName) const;
     [[nodiscard]] IMOS_CORE_API XmlNode* childElementAt(std::string_view childName,
                                                         std::size_t index);

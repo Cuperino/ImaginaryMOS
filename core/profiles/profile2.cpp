@@ -13,24 +13,11 @@ namespace imos::profiles {
 
 namespace {
 
-std::string childTextOf(const codec::XmlNode& parent, std::string_view name) {
-    if (const codec::XmlNode* child = parent.firstChildElement(name)) {
-        return child->text();
-    }
-    return {};
-}
-
 std::string messageRoID(const codec::Message& message) {
     if (const codec::XmlNode* body = message.body()) {
-        return childTextOf(*body, "roID");
+        return body->childText("roID");
     }
     return {};
-}
-
-void echoMessageID(const codec::Message& request, codec::Message& reply) {
-    if (const std::optional<std::string_view> id = request.messageID()) {
-        reply.setMessageID(*id);  // the requester correlates by the echoed ID
-    }
 }
 
 bool isConstructionType(codec::MessageType type) noexcept {
@@ -75,7 +62,7 @@ codec::Message buildRoAck(std::string_view roID, std::string_view roStatus,
 
 std::string roAckStatusText(const codec::Message& roAck) {
     if (const codec::XmlNode* body = roAck.body()) {
-        return childTextOf(*body, "roStatus");
+        return body->childText("roStatus");
     }
     return {};
 }
@@ -152,13 +139,13 @@ Result<ElementStatusReport> parseRoElementStat(const codec::Message& message) {
     }
     ElementStatusReport report;
     report.element = *element;
-    report.roID = childTextOf(*body, "roID");
-    report.storyID = childTextOf(*body, "storyID");
-    report.itemID = childTextOf(*body, "itemID");
-    report.objID = childTextOf(*body, "objID");
-    report.itemChannel = childTextOf(*body, "itemChannel");
-    report.status = childTextOf(*body, "status");
-    report.time = childTextOf(*body, "time");
+    report.roID = body->childText("roID");
+    report.storyID = body->childText("storyID");
+    report.itemID = body->childText("itemID");
+    report.objID = body->childText("objID");
+    report.itemChannel = body->childText("itemChannel");
+    report.status = body->childText("status");
+    report.time = body->childText("time");
     return report;
 }
 
@@ -221,8 +208,8 @@ std::string Profile2Responder::collectObjectStatuses(const codec::Message& messa
     const auto collectItem = [&](const codec::XmlNode& item, std::string_view storyID) {
         ElementStatus status;
         status.storyID = storyID;
-        status.itemID = childTextOf(item, "itemID");
-        status.objID = childTextOf(item, "objID");
+        status.itemID = item.childText("itemID");
+        status.objID = item.childText("objID");
         const bool known = !status.objID.empty() && objects_->object(status.objID).has_value();
         status.status = known ? "LOADED" : "UNKNOWN";
         if (!known && firstUnknown.empty()) {
@@ -231,7 +218,7 @@ std::string Profile2Responder::collectObjectStatuses(const codec::Message& messa
         statuses.push_back(std::move(status));
     };
     const auto collectStory = [&](const codec::XmlNode& story) {
-        const std::string storyID = childTextOf(story, "storyID");
+        const std::string storyID = story.childText("storyID");
         for (const codec::XmlNode& child : story.children) {
             if (child.isElement("item")) {
                 collectItem(child, storyID);
@@ -251,8 +238,7 @@ std::string Profile2Responder::collectObjectStatuses(const codec::Message& messa
         // elements the device already validated on arrival.
         if (const codec::XmlNode* source = body->firstChildElement("element_source")) {
             const codec::XmlNode* target = body->firstChildElement("element_target");
-            const std::string targetStory =
-                target ? childTextOf(*target, "storyID") : std::string{};
+            const std::string targetStory = target ? target->childText("storyID") : std::string{};
             for (const codec::XmlNode& child : source->children) {
                 if (child.isElement("story")) {
                     collectStory(child);
@@ -274,7 +260,7 @@ void Profile2Responder::handleConstruction(const SessionEvent& event) {
         Result<void> outcome = dispatchToSink(message);
         codec::Message ack =
             buildRoAck(roID, outcome.ok() ? std::string{"OK"} : "NACK: " + outcome.error().message);
-        echoMessageID(message, ack);
+        codec::echoMessageID(message, ack);
         (void)session_->enqueueReply(event.channel, std::move(ack));
         return;
     }
@@ -284,7 +270,7 @@ void Profile2Responder::handleConstruction(const SessionEvent& event) {
     if (!firstUnknown.empty() && objectPolicy_ == UnknownObjectPolicy::Reject) {
         codec::Message ack =
             buildRoAck(roID, "NACK: unknown object '" + firstUnknown + "'", statuses);
-        echoMessageID(message, ack);
+        codec::echoMessageID(message, ack);
         (void)session_->enqueueReply(event.channel, std::move(ack));
         return;  // rejected before the model ever sees it
     }
@@ -300,7 +286,7 @@ void Profile2Responder::handleConstruction(const SessionEvent& event) {
         statuses.clear();  // the payload tuples describe content we rejected
     }
     codec::Message ack = buildRoAck(roID, roStatus, statuses);
-    echoMessageID(message, ack);
+    codec::echoMessageID(message, ack);
     (void)session_->enqueueReply(event.channel, std::move(ack));
 
     if (outcome.ok()) {
@@ -429,11 +415,11 @@ bool Profile2NcsResponder::handle(const SessionEvent& event) {
                 list = source_->runningOrder(roID);
             }
             if (list.has_value()) {
-                echoMessageID(event.message, *list);
+                codec::echoMessageID(event.message, *list);
                 (void)session_->enqueueReply(event.channel, std::move(*list));
             } else {
                 codec::Message ack = buildRoAck(roID, "NACK: unknown roID '" + roID + "'");
-                echoMessageID(event.message, ack);
+                codec::echoMessageID(event.message, ack);
                 (void)session_->enqueueReply(event.channel, std::move(ack));
             }
             return true;
@@ -443,7 +429,7 @@ bool Profile2NcsResponder::handle(const SessionEvent& event) {
             const std::string roID = messageRoID(event.message);
             codec::Message ack = buildRoAck(
                 roID, report.ok() ? std::string{"OK"} : "NACK: " + report.error().message);
-            echoMessageID(event.message, ack);
+            codec::echoMessageID(event.message, ack);
             (void)session_->enqueueReply(event.channel, std::move(ack));
             if (report.ok()) {
                 statusEvents_.push_back(std::move(report).value());

@@ -22,7 +22,8 @@ Ncs::Ncs(NcsConfig config, imos::PeerSession::Dependencies deps)
       directory_(&session_, deps.clock),
       author_(&session_),
       profile2_(&session_, deps.clock),
-      profile4_(&session_) {
+      profile4_(&session_),
+      profile7_(&author_, &defaultLeasePolicy_, &profile0_, &session_, deps.clock) {
     profile2_.setSource(&author_);           // roReq is answered from the authoring store
     profile4_.setStore(&author_.desired());  // roReqAll enumerates the same store
 }
@@ -48,6 +49,16 @@ void Ncs::poll() {
 
 std::optional<imos::MonotonicTime> Ncs::nextDeadline() const {
     return session_.nextDeadline();
+}
+
+imos::Result<imos::Seq> Ncs::requestMachineInfo() {
+    imos::Result<imos::Seq> seq = profile0_.requestMachineInfo();
+    dispatch();
+    return seq;
+}
+
+const imos::profiles::PeerMachineInfo* Ncs::peerMachineInfo() const {
+    return profile0_.peerMachineInfo();
 }
 
 imos::Result<imos::Seq> Ncs::requestObject(std::string_view objID) {
@@ -80,6 +91,20 @@ imos::Result<imos::Seq> Ncs::sendStory(std::string_view roID, std::string_view s
     return seq;
 }
 
+void Ncs::setLeasePolicy(ILeasePolicy* policy) noexcept {
+    if (policy != nullptr) {
+        profile7_.setLeasePolicy(policy);
+    }
+}
+
+void Ncs::setStoryActionCapabilityPolicy(Profile7NcsResponder::CapabilityPolicy policy) noexcept {
+    profile7_.setCapabilityPolicy(policy);
+}
+
+std::optional<StoryActionAudit> Ncs::nextStoryActionAudit() {
+    return profile7_.nextAudit();
+}
+
 imos::Result<imos::Seq> Ncs::sendElementStat(const imos::profiles::ElementStatusReport& report) {
     imos::Result<imos::Seq> seq = profile2_.sendElementStat(report);
     dispatch();
@@ -93,7 +118,7 @@ std::optional<imos::profiles::ElementStatusReport> Ncs::nextElementStatus() {
 void Ncs::dispatch() {
     while (std::optional<imos::SessionEvent> event = session_.nextEvent()) {
         if (profile0_.handle(*event) || directory_.handle(*event) || author_.handle(*event) ||
-            profile2_.handle(*event) || profile4_.handle(*event)) {
+            profile2_.handle(*event) || profile4_.handle(*event) || profile7_.handle(*event)) {
             continue;
         }
         appEvents_.push_back(std::move(*event));

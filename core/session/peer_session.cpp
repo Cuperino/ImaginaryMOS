@@ -317,9 +317,7 @@ void PeerSession::enqueueHeartbeatReply(Channel channel, const codec::Message& r
     codec::Message reply = codec::makeMessage(codec::MessageType::Heartbeat);
     reply.setMosID(config_.mosID);
     reply.setNcsID(config_.ncsID);
-    if (const std::optional<std::string_view> id = request.messageID()) {
-        reply.setMessageID(*id);  // responses echo the request's messageID
-    }
+    codec::echoMessageID(request, reply);
     if (codec::XmlNode* body = reply.body()) {
         body->appendElement("time").setText(formatSpecTime(deps_.clock->wallClock()));
     }

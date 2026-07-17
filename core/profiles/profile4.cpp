@@ -11,19 +11,6 @@ namespace imos::profiles {
 
 namespace {
 
-std::string childTextOf(const codec::XmlNode& parent, std::string_view name) {
-    if (const codec::XmlNode* child = parent.firstChildElement(name)) {
-        return child->text();
-    }
-    return {};
-}
-
-void echoMessageID(const codec::Message& request, codec::Message& reply) {
-    if (const std::optional<std::string_view> id = request.messageID()) {
-        reply.setMessageID(*id);  // the requester correlates by the echoed ID
-    }
-}
-
 /// The <ro> content model (headers only): what roListAll may carry. Story
 /// and item detail is deliberately not part of it.
 constexpr std::string_view kRoHeaderFields[] = {
@@ -72,12 +59,12 @@ bool Profile4Responder::handle(const SessionEvent& event) {
 void Profile4Responder::handleStorySend(const SessionEvent& event) {
     const codec::Message& message = event.message;
     const codec::XmlNode* body = message.body();
-    const std::string roID = body ? childTextOf(*body, "roID") : std::string{};
-    const std::string storyID = body ? childTextOf(*body, "storyID") : std::string{};
+    const std::string roID = body ? body->childText("roID") : std::string{};
+    const std::string storyID = body ? body->childText("storyID") : std::string{};
 
     const auto nack = [&](std::string detail) {
         codec::Message ack = buildRoAck(roID, "NACK: " + std::move(detail));
-        echoMessageID(message, ack);
+        codec::echoMessageID(message, ack);
         (void)session_->enqueueReply(event.channel, std::move(ack));
     };
 
@@ -108,8 +95,8 @@ void Profile4Responder::handleStorySend(const SessionEvent& event) {
         StoryView view;
         view.roID = roID;
         view.storyID = storyID;
-        view.storySlug = childTextOf(*stored.body(), "storySlug");
-        view.storyNum = childTextOf(*stored.body(), "storyNum");
+        view.storySlug = stored.body()->childText("storySlug");
+        view.storyNum = stored.body()->childText("storyNum");
         view.body = codec::resolveStoryBody(stored).value();  // resolved above
         view.message = &stored;
         if (Result<void> accepted = sink_->onStory(view); !accepted.ok()) {
@@ -120,7 +107,7 @@ void Profile4Responder::handleStorySend(const SessionEvent& event) {
     }
 
     codec::Message ack = buildRoAck(roID, "OK");
-    echoMessageID(message, ack);
+    codec::echoMessageID(message, ack);
     (void)session_->enqueueReply(event.channel, std::move(ack));
 }
 
@@ -153,7 +140,7 @@ void Profile4Responder::completeListAll(const SessionEvent& event) {
             if (!child.isElement("ro")) {
                 continue;
             }
-            const std::string roID = childTextOf(child, "roID");
+            const std::string roID = child.childText("roID");
             if (!roID.empty()) {
                 headers_.insert_or_assign(roID, child);
             }
@@ -247,7 +234,7 @@ bool Profile4NcsResponder::handle(const SessionEvent& event) {
             }
         }
     }
-    echoMessageID(event.message, list);
+    codec::echoMessageID(event.message, list);
     (void)session_->enqueueReply(event.channel, std::move(list));
     return true;
 }

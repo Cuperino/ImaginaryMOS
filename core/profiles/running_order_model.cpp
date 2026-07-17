@@ -14,13 +14,6 @@ namespace {
 
 constexpr std::size_t kNpos = static_cast<std::size_t>(-1);
 
-std::string childTextOf(const codec::XmlNode& parent, std::string_view name) {
-    if (const codec::XmlNode* child = parent.firstChildElement(name)) {
-        return child->text();
-    }
-    return {};
-}
-
 /// One ordered element sequence under a parent: <story> children of an RO
 /// node or <item> children of a story. The five roElementAction operations
 /// are implemented once against this shape and reused at both levels.
@@ -32,7 +25,7 @@ struct Sequence {
     [[nodiscard]] std::size_t indexOf(std::string_view id) const {
         for (std::size_t i = 0; i < parent->children.size(); ++i) {
             const codec::XmlNode& child = parent->children[i];
-            if (child.isElement(elemName) && childTextOf(child, keyName) == id) {
+            if (child.isElement(elemName) && child.childText(keyName) == id) {
                 return i;
             }
         }
@@ -60,7 +53,7 @@ Result<void> checkPayloadKeys(const Sequence& seq, const std::vector<const codec
                               const std::vector<std::string>& ignore) {
     std::vector<std::string> seen;
     for (const codec::XmlNode* node : nodes) {
-        std::string id = childTextOf(*node, seq.keyName);
+        std::string id = node->childText(seq.keyName);
         if (id.empty()) {
             return makeError(ErrorCode::ProtocolViolation, "payload " + std::string{seq.elemName} +
                                                                " is missing its " +
@@ -168,7 +161,7 @@ Result<void> sequenceMove(Sequence seq, const std::vector<std::string>& ids,
                 if (!child.isElement(seq.elemName)) {
                     continue;
                 }
-                std::string id = childTextOf(child, seq.keyName);
+                std::string id = child.childText(seq.keyName);
                 if (std::find(ids.begin(), ids.end(), id) == ids.end()) {
                     anchor = std::move(id);
                     break;
@@ -274,7 +267,7 @@ Result<void> RunningOrderModel::apply(const codec::Message& message) {
     if (body == nullptr) {
         return makeError(ErrorCode::InvalidArgument, "message has no body element");
     }
-    const std::string roID = childTextOf(*body, "roID");
+    const std::string roID = body->childText("roID");
 
     switch (message.type()) {
         case codec::MessageType::RoCreate: {
@@ -320,7 +313,7 @@ Result<void> RunningOrderModel::apply(const codec::Message& message) {
             if (it == orders_.end()) {
                 return makeError(ErrorCode::NotFound, "unknown roID '" + roID + "'");
             }
-            it->second.roAir = childTextOf(*body, "roAir");
+            it->second.roAir = body->childText("roAir");
             return {};
         }
         case codec::MessageType::RoElementAction:
@@ -336,7 +329,7 @@ Result<void> RunningOrderModel::apply(const codec::Message& message) {
 
 Result<void> RunningOrderModel::applyMetadataReplace(const codec::Message& message) {
     const codec::XmlNode* body = message.body();
-    const std::string roID = childTextOf(*body, "roID");
+    const std::string roID = body->childText("roID");
     const auto it = orders_.find(roID);
     if (it == orders_.end()) {
         return makeError(ErrorCode::NotFound, "unknown roID '" + roID + "'");
@@ -361,7 +354,7 @@ Result<void> RunningOrderModel::applyMetadataReplace(const codec::Message& messa
 
 Result<void> RunningOrderModel::applyElementAction(const codec::Message& message) {
     const codec::XmlNode* body = message.body();
-    const std::string roID = childTextOf(*body, "roID");
+    const std::string roID = body->childText("roID");
     const auto it = orders_.find(roID);
     if (it == orders_.end()) {
         return makeError(ErrorCode::NotFound, "unknown roID '" + roID + "'");
@@ -376,8 +369,8 @@ Result<void> RunningOrderModel::applyElementAction(const codec::Message& message
         return makeError(ErrorCode::ProtocolViolation, "roElementAction has no element_source");
     }
     const codec::XmlNode* target = body->firstChildElement("element_target");
-    const std::string targetStory = target ? childTextOf(*target, "storyID") : std::string{};
-    const std::string targetItem = target ? childTextOf(*target, "itemID") : std::string{};
+    const std::string targetStory = target ? target->childText("storyID") : std::string{};
+    const std::string targetItem = target ? target->childText("itemID") : std::string{};
 
     // The source carries stories, items, storyIDs, or itemIDs — never a mix
     // (spec §3.6.1: "all Stories or all Items").
@@ -501,8 +494,8 @@ Result<void> RunningOrderModel::applyElementStat(const codec::Message& message) 
         return makeError(ErrorCode::ProtocolViolation,
                          "roElementStat element '" + elementName + "' is not RO, STORY, or ITEM");
     }
-    return setStatus(*element, childTextOf(*body, "roID"), childTextOf(*body, "storyID"),
-                     childTextOf(*body, "itemID"), childTextOf(*body, "status"));
+    return setStatus(*element, body->childText("roID"), body->childText("storyID"),
+                     body->childText("itemID"), body->childText("status"));
 }
 
 void RunningOrderModel::erase(std::string_view roID) {
@@ -532,7 +525,7 @@ std::vector<std::string> RunningOrderModel::storyIDs(std::string_view roID) cons
     if (const codec::XmlNode* ro = runningOrder(roID)) {
         for (const codec::XmlNode& child : ro->children) {
             if (child.isElement("story")) {
-                ids.push_back(childTextOf(child, "storyID"));
+                ids.push_back(child.childText("storyID"));
             }
         }
     }
@@ -543,7 +536,7 @@ const codec::XmlNode* RunningOrderModel::story(std::string_view roID,
                                                std::string_view storyID) const {
     if (const codec::XmlNode* ro = runningOrder(roID)) {
         for (const codec::XmlNode& child : ro->children) {
-            if (child.isElement("story") && childTextOf(child, "storyID") == storyID) {
+            if (child.isElement("story") && child.childText("storyID") == storyID) {
                 return &child;
             }
         }
@@ -557,7 +550,7 @@ std::vector<std::string> RunningOrderModel::itemIDs(std::string_view roID,
     if (const codec::XmlNode* storyNode = story(roID, storyID)) {
         for (const codec::XmlNode& child : storyNode->children) {
             if (child.isElement("item")) {
-                ids.push_back(childTextOf(child, "itemID"));
+                ids.push_back(child.childText("itemID"));
             }
         }
     }
@@ -568,7 +561,7 @@ const codec::XmlNode* RunningOrderModel::item(std::string_view roID, std::string
                                               std::string_view itemID) const {
     if (const codec::XmlNode* storyNode = story(roID, storyID)) {
         for (const codec::XmlNode& child : storyNode->children) {
-            if (child.isElement("item") && childTextOf(child, "itemID") == itemID) {
+            if (child.isElement("item") && child.childText("itemID") == itemID) {
                 return &child;
             }
         }

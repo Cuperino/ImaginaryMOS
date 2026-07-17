@@ -30,6 +30,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -86,6 +87,10 @@ public:
     imos::Result<void> removeStory(std::string_view roID, std::string_view storyID);
     imos::Result<void> moveStory(std::string_view roID, std::string_view storyID,
                                  std::string_view beforeStoryID = {});
+    /// Move multiple stories in one roElementAction (Profile 7: roReqStoryAction
+    /// MOVE may wrap multiple source storyIDs).
+    imos::Result<void> moveStories(std::string_view roID, std::span<const std::string> storyIDs,
+                                   std::string_view beforeStoryID = {});
     imos::Result<void> swapStories(std::string_view roID, std::string_view storyA,
                                    std::string_view storyB);
 

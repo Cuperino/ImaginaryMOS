@@ -28,6 +28,7 @@
 #include <imos/profiles/profile1.h>
 #include <imos/profiles/profile2.h>
 #include <imos/profiles/profile4.h>
+#include <imos/profiles/profile7.h>
 #include <imos/profiles/running_order_model.h>
 #include <imos/session/peer_session.h>
 
@@ -90,6 +91,14 @@ public:
                                               std::string_view storyID) const;
     [[nodiscard]] std::vector<std::string> storyIDs(std::string_view roID) const;
 
+    // Profile 7: MOS story action requests.
+
+    /// Request the NCS to create/update/move/delete a story (roReqStoryAction).
+    /// Awaits roAck via nextStoryActionResult().
+    Result<Seq> requestStoryAction(const profiles::StoryActionRequest& request);
+    /// Next resolved roReqStoryAction (outcome from roAck), in order.
+    [[nodiscard]] std::optional<profiles::StoryActionResult> nextStoryActionResult();
+
     // Host glue: connectivity changes and inbound frames pushed in.
     void onChannelConnected(Channel channel);
     void onChannelDisconnected(Channel channel);
@@ -105,6 +114,13 @@ public:
     /// Push an object lifecycle change to the NCS (create/update/delete, keyed
     /// by the mosObj's own <status>). Awaits the NCS's mosAck.
     Result<Seq> announceObject(codec::Message mosObj);
+
+    /// Request the peer's machine info (Profile 0). The reply is captured in
+    /// peerMachineInfo() when it arrives.
+    Result<Seq> requestMachineInfo();
+    /// The peer's declared machine info, parsed from its listMachInfo (or
+    /// nullptr when never received or parsing failed).
+    [[nodiscard]] const profiles::PeerMachineInfo* peerMachineInfo() const;
 
     /// Report an element status change (PLAY/STOP/READY…) to the NCS via
     /// roElementStat. Validated against and recorded into the model (unless
@@ -130,6 +146,7 @@ private:
     profiles::Profile1Responder profile1_;
     profiles::Profile2Responder profile2_;
     profiles::Profile4Responder profile4_;
+    profiles::Profile7Requester profile7_;
     bool hydrateOnConnect_ = false;
     std::deque<SessionEvent> appEvents_;
 };

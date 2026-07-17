@@ -70,4 +70,9 @@ IMOS_CORE_API Result<Message> parseMessage(std::string_view utf8,
 /// Built messages serialize compactly (no indentation).
 [[nodiscard]] IMOS_CORE_API Message makeMessage(MessageType type);
 
+/// Copy `request`'s <messageID> onto `reply` when present, so the requester
+/// can correlate the reply with its in-flight exchange. No-op when the request
+/// carries no messageID.
+IMOS_CORE_API void echoMessageID(const Message& request, Message& reply);
+
 }  // namespace imos::codec

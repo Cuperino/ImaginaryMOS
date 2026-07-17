@@ -100,16 +100,47 @@ Profile0Responder::Profile0Responder(MachineInfo info, PeerSession* session, ICl
     : info_(std::move(info)), session_(session), clock_(clock) {}
 
 bool Profile0Responder::handle(const SessionEvent& event) {
-    if (event.type != SessionEventType::MessageReceived ||
-        event.message.type() != codec::MessageType::ReqMachInfo) {
-        return false;
+    switch (event.type) {
+        case SessionEventType::MessageReceived:
+            if (event.message.type() == codec::MessageType::ReqMachInfo) {
+                codec::Message reply = buildListMachInfo(info_, clock_->wallClock());
+                codec::echoMessageID(event.message, reply);
+                (void)session_->enqueue(event.channel, std::move(reply));
+                return true;
+            }
+            if (event.message.type() == codec::MessageType::ListMachInfo) {
+                // Unsolicited peer listMachInfo (not our reqMachInfo reply).
+                if (auto result = parseListMachInfo(event.message); result.ok()) {
+                    peerInfo_ = result.value();
+                }
+                return false;
+            }
+            return false;
+        case SessionEventType::AckReceived:
+            if (pendingReqMachInfo_ && event.seq == *pendingReqMachInfo_ &&
+                event.message.type() == codec::MessageType::ListMachInfo) {
+                pendingReqMachInfo_.reset();
+                if (auto result = parseListMachInfo(event.message); result.ok()) {
+                    peerInfo_ = result.value();
+                }
+                return true;
+            }
+            return false;
+        default:
+            return false;
     }
-    codec::Message reply = buildListMachInfo(info_, clock_->wallClock());
-    if (const std::optional<std::string_view> id = event.message.messageID()) {
-        reply.setMessageID(*id);  // the answer correlates via the request's messageID
+}
+
+Result<Seq> Profile0Responder::requestMachineInfo() {
+    Result<Seq> seq = session_->enqueue(codec::makeMessage(codec::MessageType::ReqMachInfo));
+    if (seq.ok()) {
+        pendingReqMachInfo_ = seq.value();
     }
-    (void)session_->enqueue(event.channel, std::move(reply));
-    return true;
+    return seq;
+}
+
+const PeerMachineInfo* Profile0Responder::peerMachineInfo() const noexcept {
+    return peerInfo_.has_value() ? &*peerInfo_ : nullptr;
 }
 
 }  // namespace imos::profiles

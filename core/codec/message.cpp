@@ -70,6 +70,12 @@ void Message::setMessageID(std::string_view value) {
     detail::setChildText(doc_.root, "messageID", value, kEnvelopeOrder);
 }
 
+void echoMessageID(const Message& request, Message& reply) {
+    if (const std::optional<std::string_view> id = request.messageID()) {
+        reply.setMessageID(*id);
+    }
+}
+
 Result<Message> parseMessage(std::string_view utf8, const XmlParseLimits& limits) {
     Result<XmlDocument> parsed = parseXmlDocument(utf8, limits);
     if (!parsed.ok()) {

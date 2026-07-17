@@ -17,9 +17,7 @@ namespace {
 /// Read a direct child element's text, or "" when absent.
 std::string childText(const codec::Message& message, std::string_view name) {
     if (const codec::XmlNode* body = message.body()) {
-        if (const codec::XmlNode* child = body->firstChildElement(name)) {
-            return child->text();
-        }
+        return body->childText(name);
     }
     return {};
 }
@@ -94,9 +92,7 @@ void Profile1Responder::handleReqObj(const SessionEvent& event) {
     codec::Message reply = object.has_value()
                                ? std::move(*object)
                                : buildMosAck(objID, "", "NACK", "objID '" + objID + "' not found");
-    if (const std::optional<std::string_view> id = event.message.messageID()) {
-        reply.setMessageID(*id);  // the requester correlates by the echoed ID
-    }
+    codec::echoMessageID(event.message, reply);
     (void)session_->enqueueReply(event.channel, std::move(reply));
 }
 
@@ -106,9 +102,7 @@ void Profile1Responder::handleReqAll(const SessionEvent& event) {
     // Both methods start by acking the request (spec §3.2.1); the ack completes
     // the NCS's mosReqAll exchange, then the catalog follows as its own traffic.
     codec::Message ack = buildMosAck("", "", "ACK", "");
-    if (const std::optional<std::string_view> id = event.message.messageID()) {
-        ack.setMessageID(*id);
-    }
+    codec::echoMessageID(event.message, ack);
     (void)session_->enqueueReply(event.channel, std::move(ack));
 
     if (pause <= 0) {
@@ -246,9 +240,7 @@ bool ObjectDirectory::handle(const SessionEvent& event) {
 void ObjectDirectory::ackPush(Channel channel, const codec::Message& received) {
     codec::Message ack =
         buildMosAck(childText(received, "objID"), childText(received, "objRev"), "ACK", "");
-    if (const std::optional<std::string_view> id = received.messageID()) {
-        ack.setMessageID(*id);  // completes the peer's in-flight push
-    }
+    codec::echoMessageID(received, ack);
     (void)session_->enqueueReply(channel, std::move(ack));
 }
 

@@ -68,10 +68,12 @@ struct PeerMachineInfo {
 /// is not a listMachInfo.
 IMOS_CORE_API Result<PeerMachineInfo> parseListMachInfo(const codec::Message& message);
 
-/// Profile 0 responder: give it every MessageReceived event; when the event
-/// is a reqMachInfo it queues the listMachInfo answer (echoing the request's
-/// messageID) on the same channel and returns true, meaning the event is
-/// consumed. All other events return false untouched.
+/// Profile 0 responder: give it every MessageReceived/AckReceived event; when
+/// the event is a reqMachInfo it queues the listMachInfo answer (echoing the
+/// request's messageID) on the same channel and returns true, meaning the event
+/// is consumed. Also captures listMachInfo replies (both as AckReceived to our
+/// own reqMachInfo, and passively when the peer sends one unsolicited) and
+/// stores them in peerMachineInfo() for capability/profile negotiation.
 class IMOS_CORE_API Profile0Responder {
 public:
     Profile0Responder(MachineInfo info, PeerSession* session, IClock* clock);
@@ -81,10 +83,19 @@ public:
     [[nodiscard]] const MachineInfo& machineInfo() const noexcept { return info_; }
     void setMachineInfo(MachineInfo info) { info_ = std::move(info); }
 
+    /// Ask the peer for its machine info (reqMachInfo). The reply is captured
+    /// in peerMachineInfo() when it arrives.
+    [[nodiscard]] Result<Seq> requestMachineInfo();
+    /// The peer's declared machine info, parsed from its listMachInfo (or
+    /// nullptr when never received or parsing failed).
+    [[nodiscard]] const PeerMachineInfo* peerMachineInfo() const noexcept;
+
 private:
     MachineInfo info_;
     PeerSession* session_;
     IClock* clock_;
+    std::optional<Seq> pendingReqMachInfo_;  ///< outstanding reqMachInfo seq
+    std::optional<PeerMachineInfo> peerInfo_;
 };
 
 }  // namespace imos::profiles

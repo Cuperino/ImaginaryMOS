@@ -25,13 +25,6 @@ constexpr std::string_view kHeaderOrder[] = {"roID",      "roSlug",   "roChannel
                                              "roEdStart", "roEdDur",  "roTrigger",
                                              "macroIn",   "macroOut", "mosExternalMetadata"};
 
-std::string childTextOf(const XmlNode& parent, std::string_view name) {
-    if (const XmlNode* child = parent.firstChildElement(name)) {
-        return child->text();
-    }
-    return {};
-}
-
 /// One diffable sequence level: stories under an RO, or items under one
 /// story (storyScope carries the enclosing storyID at the item level).
 struct LevelSpec {
@@ -51,7 +44,7 @@ std::vector<std::string> keysOf(const XmlNode& parent, const LevelSpec& level) {
     std::vector<std::string> keys;
     for (const XmlNode& child : parent.children) {
         if (child.isElement(level.elemName)) {
-            keys.push_back(childTextOf(child, level.keyName));
+            keys.push_back(child.childText(level.keyName));
         }
     }
     return keys;
@@ -59,7 +52,7 @@ std::vector<std::string> keysOf(const XmlNode& parent, const LevelSpec& level) {
 
 const XmlNode* findByKey(const XmlNode& parent, const LevelSpec& level, std::string_view key) {
     for (const XmlNode& child : parent.children) {
-        if (child.isElement(level.elemName) && childTextOf(child, level.keyName) == key) {
+        if (child.isElement(level.elemName) && child.childText(level.keyName) == key) {
             return &child;
         }
     }
@@ -360,6 +353,21 @@ Result<void> RunningOrderAuthor::moveStory(std::string_view roID, std::string_vi
     return applyEdit(action);
 }
 
+Result<void> RunningOrderAuthor::moveStories(std::string_view roID,
+                                             std::span<const std::string> storyIDs,
+                                             std::string_view beforeStoryID) {
+    Message action = makeElementAction(roID, "MOVE");
+    XmlNode& body = *action.body();
+    if (!beforeStoryID.empty()) {
+        body.appendElement("element_target").appendElement("storyID").setText(beforeStoryID);
+    }
+    XmlNode& source = body.appendElement("element_source");
+    for (const std::string& id : storyIDs) {
+        source.appendElement("storyID").setText(id);
+    }
+    return applyEdit(action);
+}
+
 Result<void> RunningOrderAuthor::swapStories(std::string_view roID, std::string_view storyA,
                                              std::string_view storyB) {
     Message action = makeElementAction(roID, "SWAP");
@@ -525,10 +533,10 @@ Result<imos::Seq> RunningOrderAuthor::sendStory(std::string_view roID, std::stri
     XmlNode* messageBody = send.body();
     messageBody->appendElement("roID").setText(roID);
     messageBody->appendElement("storyID").setText(storyID);
-    if (const std::string slug = childTextOf(*story, "storySlug"); !slug.empty()) {
+    if (const std::string slug = story->childText("storySlug"); !slug.empty()) {
         messageBody->appendElement("storySlug").setText(slug);
     }
-    if (const std::string num = childTextOf(*story, "storyNum"); !num.empty()) {
+    if (const std::string num = story->childText("storyNum"); !num.empty()) {
         messageBody->appendElement("storyNum").setText(num);
     }
     if (authored->agency) {

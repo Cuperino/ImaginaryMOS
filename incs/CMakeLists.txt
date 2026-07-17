@@ -11,6 +11,7 @@ imos_add_library(incs
   SOURCES
     incs.cpp
     ncs.cpp
+    profile7_ncs.cpp
     running_order_author.cpp
   LINK_PUBLIC
     imos::core)

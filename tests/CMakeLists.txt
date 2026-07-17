@@ -70,7 +70,8 @@ endif()
 add_executable(imos_profile_test
   profiles/profile1_test.cpp
   profiles/profile2_test.cpp
-  profiles/profile4_test.cpp)
+  profiles/profile4_test.cpp
+  profiles/profile7_test.cpp)
 target_link_libraries(imos_profile_test PRIVATE
   GTest::gtest_main
   imos::core

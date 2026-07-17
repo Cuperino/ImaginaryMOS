@@ -30,6 +30,7 @@
 #include <imos/profiles/profile4.h>
 #include <imos/session/peer_session.h>
 #include <incs/incs_export.h>
+#include <incs/profile7_ncs.h>
 #include <incs/running_order_author.h>
 
 namespace incs {
@@ -58,6 +59,10 @@ public:
     void poll();
     [[nodiscard]] std::optional<imos::MonotonicTime> nextDeadline() const;
 
+    // Profile 0: machine info.
+    imos::Result<imos::Seq> requestMachineInfo();
+    [[nodiscard]] const imos::profiles::PeerMachineInfo* peerMachineInfo() const;
+
     // Profile 1 object directory.
     imos::Result<imos::Seq> requestObject(std::string_view objID);  ///< mosReqObj
     imos::Result<imos::Seq> requestAll(int pauseSeconds);           ///< mosReqAll
@@ -81,6 +86,17 @@ public:
     /// device's roAck resolves through author().nextEvent().
     imos::Result<imos::Seq> sendStory(std::string_view roID, std::string_view storyID);
 
+    // Profile 7: story action requests (device-originated).
+
+    /// Set the lease policy for roReqStoryAction handling (default: single-holder TTL).
+    void setLeasePolicy(ILeasePolicy* policy) noexcept;
+    /// Capability gating for roReqStoryAction: Strict NACKs peers that never
+    /// advertised Profile 7 in listMachInfo; Lenient (default) accepts and
+    /// records an audit entry regardless (§4.1 strict/lenient duality).
+    void setStoryActionCapabilityPolicy(Profile7NcsResponder::CapabilityPolicy policy) noexcept;
+    /// Next resolved roReqStoryAction, for audit/simulator assertions.
+    [[nodiscard]] std::optional<StoryActionAudit> nextStoryActionAudit();
+
     /// Originate an NCS-side roElementStat (2.8.5+; flows into the device's
     /// model). <time> is stamped from the injected clock.
     imos::Result<imos::Seq> sendElementStat(const imos::profiles::ElementStatusReport& report);
@@ -100,6 +116,8 @@ private:
     RunningOrderAuthor author_;
     imos::profiles::Profile2NcsResponder profile2_;
     imos::profiles::Profile4NcsResponder profile4_;
+    SingleHolderLeasePolicy defaultLeasePolicy_;
+    Profile7NcsResponder profile7_;
     std::deque<imos::SessionEvent> appEvents_;
 };
 

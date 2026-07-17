@@ -162,6 +162,13 @@ const XmlNode* XmlNode::firstChildElement(std::string_view childName) const {
     return nullptr;
 }
 
+std::string XmlNode::childText(std::string_view childName) const {
+    if (const XmlNode* child = firstChildElement(childName)) {
+        return child->text();
+    }
+    return {};
+}
+
 std::size_t XmlNode::countChildElements(std::string_view childName) const {
     std::size_t count = 0;
     for (const XmlNode& child : children) {
