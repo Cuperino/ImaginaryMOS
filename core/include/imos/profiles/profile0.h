@@ -84,8 +84,10 @@ public:
     void setMachineInfo(MachineInfo info) { info_ = std::move(info); }
 
     /// Ask the peer for its machine info (reqMachInfo). The reply is captured
-    /// in peerMachineInfo() when it arrives.
-    [[nodiscard]] Result<Seq> requestMachineInfo();
+    /// in peerMachineInfo() when it arrives. reqMachInfo is valid on any
+    /// channel, so the caller picks one; Mom (the legacy lower port, 10540)
+    /// is the conventional home for machine-info traffic.
+    [[nodiscard]] Result<Seq> requestMachineInfo(Channel channel = Channel::Mom);
     /// The peer's declared machine info, parsed from its listMachInfo (or
     /// nullptr when never received or parsing failed).
     [[nodiscard]] const PeerMachineInfo* peerMachineInfo() const noexcept;

@@ -131,8 +131,11 @@ bool Profile0Responder::handle(const SessionEvent& event) {
     }
 }
 
-Result<Seq> Profile0Responder::requestMachineInfo() {
-    Result<Seq> seq = session_->enqueue(codec::makeMessage(codec::MessageType::ReqMachInfo));
+Result<Seq> Profile0Responder::requestMachineInfo(Channel channel) {
+    // reqMachInfo is ChannelAffinity::AnyChannel, so the channel-inferring
+    // enqueue overload rejects it; the channel must be named explicitly.
+    Result<Seq> seq =
+        session_->enqueue(channel, codec::makeMessage(codec::MessageType::ReqMachInfo));
     if (seq.ok()) {
         pendingReqMachInfo_ = seq.value();
     }

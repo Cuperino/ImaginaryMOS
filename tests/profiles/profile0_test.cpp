@@ -131,6 +131,50 @@ TEST(Profile0, ParseRejectsWrongMessageType) {
     EXPECT_FALSE(parseListMachInfo(imos::codec::makeMessage(MessageType::ReqMachInfo)).ok());
 }
 
+// Originating side: requestMachineInfo() must name a channel explicitly
+// (reqMachInfo is AnyChannel, so the channel-inferring enqueue rejects it —
+// this regressed silently until the P7 round because nothing exercised it).
+TEST(Profile0, RequestMachineInfoSendsAndCapturesReply) {
+    FakeClock clock;
+    CaptureTransport transport;
+    imos::InMemoryMessageStore store;
+    SessionConfig config;
+    config.mosID = "vtr7.playout.example.mos";
+    config.ncsID = "ncs.example.com";
+    PeerSession session{config, PeerSession::Dependencies{&clock, &transport, &store, nullptr}};
+    Profile0Responder responder{deviceInfo(), &session, &clock};
+
+    session.onChannelConnected(Channel::Mom);
+    ASSERT_TRUE(responder.requestMachineInfo().ok());
+
+    const auto& frames = transport.sent[static_cast<std::size_t>(Channel::Mom)];
+    ASSERT_EQ(frames.size(), 1U);
+    const auto utf8 = imos::encoding::decodeToUtf8(frames[0], {});
+    ASSERT_TRUE(utf8.ok());
+    const Message request = parseUtf8(utf8.value());
+    ASSERT_EQ(request.type(), MessageType::ReqMachInfo);
+    const std::string messageId{request.messageID().value_or("")};
+    ASSERT_FALSE(messageId.empty());
+
+    MachineInfo ncsInfo = deviceInfo();
+    ncsInfo.deviceType = DeviceType::Ncs;
+    Message reply = buildListMachInfo(ncsInfo, WallClockTime{1'750'000'000'000});
+    reply.setMosID(config.mosID);
+    reply.setNcsID(config.ncsID);
+    reply.setMessageID(messageId);
+    const auto frame = imos::encoding::encodeFromUtf8(imos::codec::serializeMessage(reply), {});
+    ASSERT_TRUE(frame.ok());
+    session.onFrameReceived(Channel::Mom, frame.value());
+
+    bool consumed = false;
+    while (auto event = session.nextEvent()) {
+        consumed = responder.handle(*event) || consumed;
+    }
+    ASSERT_TRUE(consumed);
+    ASSERT_NE(responder.peerMachineInfo(), nullptr);
+    EXPECT_EQ(responder.peerMachineInfo()->info.deviceType, DeviceType::Ncs);
+}
+
 TEST(Profile0, ResponderAnswersReqMachInfoBothRoles) {
     for (const DeviceType role : {DeviceType::Mos, DeviceType::Ncs}) {
         FakeClock clock;
