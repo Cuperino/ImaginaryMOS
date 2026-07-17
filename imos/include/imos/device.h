@@ -28,6 +28,7 @@
 #include <imos/profiles/profile1.h>
 #include <imos/profiles/profile2.h>
 #include <imos/profiles/profile4.h>
+#include <imos/profiles/profile5.h>
 #include <imos/profiles/profile7.h>
 #include <imos/profiles/running_order_model.h>
 #include <imos/session/peer_session.h>
@@ -69,6 +70,11 @@ public:
     /// are still acked, stored, and queryable via story().
     void attach(profiles::IStorySink& sink);
 
+    /// Register the host's control consumer for Profile 5 (roCtrl/roItemCue).
+    /// onCtrl's outcome drives the roAck; cues are always acked. Without a
+    /// sink, requests and cues queue for nextCtrlRequest()/nextItemCue().
+    void attach(profiles::IControlSink& sink);
+
     /// What to do when construction messages reference objIDs the attached
     /// object source cannot resolve (default: accept with statuses).
     void setUnknownObjectPolicy(profiles::Profile2Responder::UnknownObjectPolicy policy);
@@ -90,6 +96,21 @@ public:
     [[nodiscard]] const codec::Message* story(std::string_view roID,
                                               std::string_view storyID) const;
     [[nodiscard]] std::vector<std::string> storyIDs(std::string_view roID) const;
+
+    // Profile 5: item control (roCtrl in, roItemCue both ways).
+
+    /// Originate a cue (prompter style; spec §3.7.2). Pass `addresseeNcsID`
+    /// to address the item's parent MOS — its name then rides the envelope's
+    /// <ncsID> slot per the spec's counterintuitive assignment; empty uses
+    /// the session's configured ncsID. The peer's roAck surfaces via
+    /// nextEvent() as an ordinary AckReceived.
+    Result<Seq> sendItemCue(const profiles::ItemCue& cue, std::string_view addresseeNcsID = {});
+
+    /// Sink-less drains: resolved control requests and cues, in arrival
+    /// order (already acked "OK"). Empty when an IControlSink is attached —
+    /// the sink then sees them instead.
+    [[nodiscard]] std::optional<profiles::CtrlRequest> nextCtrlRequest();
+    [[nodiscard]] std::optional<profiles::ItemCue> nextItemCue();
 
     // Profile 7: MOS story action requests.
 
@@ -146,6 +167,7 @@ private:
     profiles::Profile1Responder profile1_;
     profiles::Profile2Responder profile2_;
     profiles::Profile4Responder profile4_;
+    profiles::Profile5Responder profile5_;
     profiles::Profile7Requester profile7_;
     bool hydrateOnConnect_ = false;
     std::deque<SessionEvent> appEvents_;

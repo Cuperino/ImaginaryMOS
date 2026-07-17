@@ -23,6 +23,7 @@ Ncs::Ncs(NcsConfig config, imos::PeerSession::Dependencies deps)
       author_(&session_),
       profile2_(&session_, deps.clock),
       profile4_(&session_),
+      profile5_(&session_),
       profile7_(&author_, &defaultLeasePolicy_, &profile0_, &session_, deps.clock) {
     profile2_.setSource(&author_);           // roReq is answered from the authoring store
     profile4_.setStore(&author_.desired());  // roReqAll enumerates the same store
@@ -91,6 +92,28 @@ imos::Result<imos::Seq> Ncs::sendStory(std::string_view roID, std::string_view s
     return seq;
 }
 
+imos::Result<imos::Seq> Ncs::sendCtrl(imos::profiles::CtrlScope scope, std::string_view roID,
+                                      std::string_view storyID, std::string_view itemID,
+                                      imos::profiles::CtrlCommand command) {
+    imos::Result<imos::Seq> seq = profile5_.sendCtrl(scope, roID, storyID, itemID, command);
+    dispatch();
+    return seq;
+}
+
+imos::Result<imos::Seq> Ncs::sendItemCue(const imos::profiles::ItemCue& cue) {
+    imos::Result<imos::Seq> seq = profile5_.sendItemCue(cue);
+    dispatch();
+    return seq;
+}
+
+std::optional<imos::profiles::CtrlResult> Ncs::nextCtrlResult() {
+    return profile5_.nextResult();
+}
+
+std::optional<imos::profiles::ItemCue> Ncs::nextItemCue() {
+    return profile5_.nextItemCue();
+}
+
 void Ncs::setLeasePolicy(ILeasePolicy* policy) noexcept {
     if (policy != nullptr) {
         profile7_.setLeasePolicy(policy);
@@ -118,7 +141,8 @@ std::optional<imos::profiles::ElementStatusReport> Ncs::nextElementStatus() {
 void Ncs::dispatch() {
     while (std::optional<imos::SessionEvent> event = session_.nextEvent()) {
         if (profile0_.handle(*event) || directory_.handle(*event) || author_.handle(*event) ||
-            profile2_.handle(*event) || profile4_.handle(*event) || profile7_.handle(*event)) {
+            profile2_.handle(*event) || profile4_.handle(*event) || profile5_.handle(*event) ||
+            profile7_.handle(*event)) {
             continue;
         }
         appEvents_.push_back(std::move(*event));

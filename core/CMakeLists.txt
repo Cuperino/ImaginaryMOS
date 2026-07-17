@@ -28,6 +28,7 @@ imos_add_library(core
     profiles/profile1.cpp
     profiles/profile2.cpp
     profiles/profile4.cpp
+    profiles/profile5.cpp
     profiles/profile7.cpp
     profiles/running_order_model.cpp
     session/in_memory_store.cpp

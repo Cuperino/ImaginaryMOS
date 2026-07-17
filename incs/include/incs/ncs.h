@@ -28,6 +28,7 @@
 #include <imos/profiles/profile1.h>
 #include <imos/profiles/profile2.h>
 #include <imos/profiles/profile4.h>
+#include <imos/profiles/profile5.h>
 #include <imos/session/peer_session.h>
 #include <incs/incs_export.h>
 #include <incs/profile7_ncs.h>
@@ -86,6 +87,24 @@ public:
     /// device's roAck resolves through author().nextEvent().
     imos::Result<imos::Seq> sendStory(std::string_view roID, std::string_view storyID);
 
+    // Profile 5: item control.
+
+    /// Issue READY / EXECUTE / PAUSE / STOP / SIGNAL at `scope` (spec
+    /// §3.7.3: RO scope wants roID alone, story scope roID+storyID, item
+    /// scope all three — the message carries the lower levels as empty
+    /// elements). The device's roAck resolves through nextCtrlResult().
+    imos::Result<imos::Seq> sendCtrl(imos::profiles::CtrlScope scope, std::string_view roID,
+                                     std::string_view storyID, std::string_view itemID,
+                                     imos::profiles::CtrlCommand command);
+    /// Originate a timed item-event notification toward the device (spec
+    /// §3.7.2); resolves through nextCtrlResult() like sendCtrl.
+    imos::Result<imos::Seq> sendItemCue(const imos::profiles::ItemCue& cue);
+    /// roAck outcomes of this NCS's sendCtrl/sendItemCue, in order.
+    [[nodiscard]] std::optional<imos::profiles::CtrlResult> nextCtrlResult();
+    /// Device-originated cues (prompter feedback forced to the NCS), in
+    /// arrival order — already acked.
+    [[nodiscard]] std::optional<imos::profiles::ItemCue> nextItemCue();
+
     // Profile 7: story action requests (device-originated).
 
     /// Set the lease policy for roReqStoryAction handling (default: single-holder TTL).
@@ -116,6 +135,7 @@ private:
     RunningOrderAuthor author_;
     imos::profiles::Profile2NcsResponder profile2_;
     imos::profiles::Profile4NcsResponder profile4_;
+    imos::profiles::Profile5NcsResponder profile5_;
     SingleHolderLeasePolicy defaultLeasePolicy_;
     Profile7NcsResponder profile7_;
     std::deque<imos::SessionEvent> appEvents_;

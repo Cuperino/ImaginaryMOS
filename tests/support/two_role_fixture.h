@@ -89,7 +89,7 @@ struct TwoRoleFixture {
         info.swRev = "1.0.0";
         info.id = type == imos::profiles::DeviceType::Mos ? kMosID : kNcsID;
         info.deviceType = type;
-        info.profiles = {true, true, true, false, true, false, false, true};
+        info.profiles = {true, true, true, false, true, true, false, true};
         return info;
     }
 

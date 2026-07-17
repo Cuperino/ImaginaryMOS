@@ -806,6 +806,132 @@ TEST(Ws40Transport, Profile4AgencyPayloadPreservedOverWebSocketBothEncodings) {
     }
 }
 
+// ---- Profile 5 over real sockets (plan §13 M4) -----------------------------
+//
+// Item control on the wire: an NCS roCtrl at item scope reaches the device's
+// control sink over a real WebSocket and its roAck resolves, then a
+// device-originated roItemCue reaches the NCS. Scope negatives, resync, and
+// the fixture matches stay in the fake-clock unit suite.
+
+namespace {
+
+/// Minimal capturing control sink: resolved requests, accepted as "OK".
+class CapturingControlSink : public imos::profiles::IControlSink {
+public:
+    std::vector<imos::profiles::CtrlRequest> ctrls;
+    imos::Result<void> onCtrl(const imos::profiles::CtrlRequest& request) override {
+        imos::profiles::CtrlRequest copy = request;
+        copy.message = nullptr;
+        ctrls.push_back(std::move(copy));
+        return {};
+    }
+    void onItemCue(const imos::profiles::ItemCue&) override {}
+};
+
+}  // namespace
+
+TEST(Ws40Transport, Profile5ItemControlOverWebSocket) {
+    SystemClock clock;
+    imos::InMemoryMessageStore deviceStore;
+    imos::InMemoryMessageStore ncsStore;
+
+    ServerConfig serverConfig;
+    serverConfig.host = "127.0.0.1";
+    serverConfig.port = ix::getFreePort();
+    Ws40Server server{serverConfig};
+    ServerPeerConfig peer;
+    peer.mosID = kMosID;
+    peer.ncsID = kNcsID;
+    ASSERT_TRUE(server.addPeer(peer).ok());
+    ASSERT_TRUE(server.start().ok());
+    incs::Ncs ncs{
+        {sessionConfig(), machineInfo(DeviceType::Ncs)},
+        PeerSession::Dependencies{&clock, &server.transportFor(kMosID, kNcsID), &ncsStore}};
+
+    ClientConfig clientConfig;
+    clientConfig.endpointUrl =
+        "ws://127.0.0.1:" + std::to_string(serverConfig.port) + "/mos/Communication";
+    clientConfig.mosID = kMosID;
+    clientConfig.ncsID = kNcsID;
+    clientConfig.channels = {Channel::Ro};
+    Ws40Client client{clientConfig, &clock};
+    imos::Device device{{sessionConfig(), machineInfo(DeviceType::Mos)},
+                        PeerSession::Dependencies{&clock, &client, &deviceStore}};
+    CapturingControlSink sink;
+    device.attach(sink);
+    ASSERT_TRUE(client.start().ok());
+
+    const auto pump = [&] {
+        client.pump(device.session());
+        device.poll();
+        while (auto event = server.nextEvent()) {
+            switch (event->kind) {
+                case ServerEvent::Kind::ChannelConnected:
+                    ncs.onChannelConnected(event->channel);
+                    break;
+                case ServerEvent::Kind::ChannelDisconnected:
+                    ncs.onChannelDisconnected(event->channel);
+                    break;
+                case ServerEvent::Kind::Frame:
+                    ncs.onFrameReceived(event->channel, event->frame);
+                    break;
+                default:
+                    break;
+            }
+        }
+        ncs.poll();
+    };
+    const auto waitFor = [&](const std::function<bool()>& predicate) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{5000};
+        while (std::chrono::steady_clock::now() < deadline) {
+            pump();
+            if (predicate()) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        }
+        return false;
+    };
+
+    ASSERT_TRUE(waitFor([&] { return client.isConnected(Channel::Ro); }));
+
+    // Converge one RO with an item so every scope level has a target.
+    ASSERT_TRUE(ncs.author().create("WS-RO5", "WS Rundown").ok());
+    imos::codec::XmlNode story = incs::RunningOrderAuthor::makeStory("s1", "Lead");
+    story.children.push_back(incs::RunningOrderAuthor::makeItem("i1", "OBJ1", kMosID));
+    ASSERT_TRUE(ncs.author().insertStory("WS-RO5", story).ok());
+    ASSERT_TRUE(ncs.author().commit("WS-RO5").ok());
+    ASSERT_TRUE(waitFor([&] { return device.runningOrderModel().has("WS-RO5"); }));
+
+    // roCtrl at item scope: the sink sees the resolved request, the roAck
+    // resolves on the NCS side.
+    ASSERT_TRUE(ncs.sendCtrl(imos::profiles::CtrlScope::Item, "WS-RO5", "s1", "i1",
+                             imos::profiles::CtrlCommand::Execute)
+                    .ok());
+    ASSERT_TRUE(waitFor([&] { return !sink.ctrls.empty(); }));
+    EXPECT_EQ(sink.ctrls.front().scope, imos::profiles::CtrlScope::Item);
+    EXPECT_EQ(sink.ctrls.front().itemID, "i1");
+    std::optional<imos::profiles::CtrlResult> result;
+    ASSERT_TRUE(waitFor([&] { return (result = ncs.nextCtrlResult()).has_value(); }));
+    EXPECT_TRUE(result->ok) << result->roStatus;
+
+    // Device-originated cue reaches the NCS.
+    imos::profiles::ItemCue cue;
+    cue.mosID = kMosID;
+    cue.roID = "WS-RO5";
+    cue.storyID = "s1";
+    cue.itemID = "i1";
+    cue.roEventType = "PLAY";
+    cue.roEventTime = "2026-07-16T12:00:00";
+    ASSERT_TRUE(device.sendItemCue(cue).ok());
+    std::optional<imos::profiles::ItemCue> received;
+    ASSERT_TRUE(waitFor([&] { return (received = ncs.nextItemCue()).has_value(); }));
+    EXPECT_EQ(received->roEventType, "PLAY");
+    EXPECT_EQ(received->itemID, "i1");
+
+    client.stop();
+}
+
 // ---- WASM client smoke (plan §13 M2: "P0 conformance … + WASM client") ----
 //
 // Runs the Ws40EmscriptenClient (built by the wasm preset as
