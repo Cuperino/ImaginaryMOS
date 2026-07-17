@@ -172,7 +172,10 @@ struct ServerPeerConfig {
 
 struct ServerConfig {
     std::string host = "0.0.0.0";
-    int port = 0;  ///< 0 → ephemeral (tests); production typically 80/443
+    /// 0 → start() picks a free ephemeral port (probe + bind, retried
+    /// against the probe race) and port() reports the choice; production
+    /// deployments typically pin 80/443.
+    int port = 0;
     TlsOptions tls;
     bool enableDeflate = true;
     /// When set, the upgrade must carry valid Basic credentials; verified
@@ -211,9 +214,13 @@ public:
     /// Register a peer relationship; must precede connections claiming it.
     Result<void> addPeer(const ServerPeerConfig& peer);
 
+    /// Bind and listen. With config.port == 0 a free ephemeral port is
+    /// probed and the bind retried a few times — the probe socket must
+    /// close before the listener binds, so another process can steal the
+    /// port in between.
     Result<void> start();
     void stop();
-    /// The bound listen port (resolves an ephemeral request).
+    /// The bound listen port (after start() resolves an ephemeral request).
     [[nodiscard]] int port() const;
 
     /// The per-peer ITransport to hand to that peer's PeerSession. send()
@@ -230,6 +237,9 @@ public:
 
 private:
     struct Impl;
+    /// One bind-and-listen attempt on `port` (fresh ix server, options and
+    /// connection callback installed). False leaves no server behind.
+    bool listenOn(int port);
     std::unique_ptr<Impl> impl_;
 };
 

@@ -23,8 +23,6 @@
 
 #include <gtest/gtest.h>
 
-#include <ixwebsocket/IXGetFreePort.h>
-
 #include <imos/codec/gen/views.h>
 #include <imos/codec/message.h>
 #include <imos/device.h>
@@ -124,7 +122,7 @@ struct Rig {
                      imos::transports::ws40::ICredentialVerifier* credentials = nullptr) {
         ServerConfig config;
         config.host = "127.0.0.1";
-        config.port = port == 0 ? ix::getFreePort() : port;
+        config.port = port;  // 0 on first start → ephemeral; restarts rebind
         config.credentials = credentials;
         server = std::make_unique<Ws40Server>(config);
         ServerPeerConfig peer;
@@ -133,7 +131,7 @@ struct Rig {
         peer.wireEncoding = peerEncoding;
         ASSERT_TRUE(server->addPeer(peer).ok());
         ASSERT_TRUE(server->start().ok());
-        port = config.port;
+        port = server->port();
 
         ncsSession = std::make_unique<PeerSession>(
             sessionConfig(peerEncoding),
@@ -475,14 +473,14 @@ TEST(Ws40Transport, Profile1ObjectWorkflowOverWebSocket) {
 
     // NCS role on the server side.
     ServerConfig serverConfig;
-    serverConfig.host = "127.0.0.1";
-    serverConfig.port = ix::getFreePort();
+    serverConfig.host = "127.0.0.1";  // port stays 0 → ephemeral
     Ws40Server server{serverConfig};
     ServerPeerConfig peer;
     peer.mosID = kMosID;
     peer.ncsID = kNcsID;
     ASSERT_TRUE(server.addPeer(peer).ok());
     ASSERT_TRUE(server.start().ok());
+    serverConfig.port = server.port();
     incs::Ncs ncs{
         {sessionConfig(), machineInfo(DeviceType::Ncs)},
         PeerSession::Dependencies{&clock, &server.transportFor(kMosID, kNcsID), &ncsStore}};
@@ -582,14 +580,14 @@ TEST(Ws40Transport, Profile2RunningOrderWorkflowOverWebSocket) {
     imos::InMemoryMessageStore ncsStore;
 
     ServerConfig serverConfig;
-    serverConfig.host = "127.0.0.1";
-    serverConfig.port = ix::getFreePort();
+    serverConfig.host = "127.0.0.1";  // port stays 0 → ephemeral
     Ws40Server server{serverConfig};
     ServerPeerConfig peer;
     peer.mosID = kMosID;
     peer.ncsID = kNcsID;
     ASSERT_TRUE(server.addPeer(peer).ok());
     ASSERT_TRUE(server.start().ok());
+    serverConfig.port = server.port();
     incs::Ncs ncs{
         {sessionConfig(), machineInfo(DeviceType::Ncs)},
         PeerSession::Dependencies{&clock, &server.transportFor(kMosID, kNcsID), &ncsStore}};
@@ -708,8 +706,7 @@ TEST(Ws40Transport, Profile4AgencyPayloadPreservedOverWebSocketBothEncodings) {
         imos::InMemoryMessageStore ncsStore;
 
         ServerConfig serverConfig;
-        serverConfig.host = "127.0.0.1";
-        serverConfig.port = ix::getFreePort();
+        serverConfig.host = "127.0.0.1";  // port stays 0 → ephemeral
         Ws40Server server{serverConfig};
         ServerPeerConfig peer;
         peer.mosID = kMosID;
@@ -717,6 +714,7 @@ TEST(Ws40Transport, Profile4AgencyPayloadPreservedOverWebSocketBothEncodings) {
         peer.wireEncoding = encoding;
         ASSERT_TRUE(server.addPeer(peer).ok());
         ASSERT_TRUE(server.start().ok());
+        serverConfig.port = server.port();
         incs::Ncs ncs{
             {sessionConfig(encoding), machineInfo(DeviceType::Ncs)},
             PeerSession::Dependencies{&clock, &server.transportFor(kMosID, kNcsID), &ncsStore}};
@@ -836,14 +834,14 @@ TEST(Ws40Transport, Profile5ItemControlOverWebSocket) {
     imos::InMemoryMessageStore ncsStore;
 
     ServerConfig serverConfig;
-    serverConfig.host = "127.0.0.1";
-    serverConfig.port = ix::getFreePort();
+    serverConfig.host = "127.0.0.1";  // port stays 0 → ephemeral
     Ws40Server server{serverConfig};
     ServerPeerConfig peer;
     peer.mosID = kMosID;
     peer.ncsID = kNcsID;
     ASSERT_TRUE(server.addPeer(peer).ok());
     ASSERT_TRUE(server.start().ok());
+    serverConfig.port = server.port();
     incs::Ncs ncs{
         {sessionConfig(), machineInfo(DeviceType::Ncs)},
         PeerSession::Dependencies{&clock, &server.transportFor(kMosID, kNcsID), &ncsStore}};
@@ -1065,8 +1063,7 @@ TEST(Ws40Transport, TlsSelfSignedPolicyAndPinning) {
     Rig rig;
     {
         ServerConfig config;
-        config.host = "127.0.0.1";
-        config.port = ix::getFreePort();
+        config.host = "127.0.0.1";  // port stays 0 → ephemeral
         config.tls.enabled = true;
         config.tls.certFile = certs.cert;
         config.tls.keyFile = certs.key;
@@ -1076,7 +1073,7 @@ TEST(Ws40Transport, TlsSelfSignedPolicyAndPinning) {
         peer.ncsID = kNcsID;
         ASSERT_TRUE(rig.server->addPeer(peer).ok());
         ASSERT_TRUE(rig.server->start().ok());
-        rig.port = config.port;
+        rig.port = rig.server->port();
         rig.ncsSession = std::make_unique<PeerSession>(
             sessionConfig(),
             PeerSession::Dependencies{&rig.clock, &rig.server->transportFor(kMosID, kNcsID),

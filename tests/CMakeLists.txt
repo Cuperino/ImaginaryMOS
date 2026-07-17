@@ -58,7 +58,6 @@ if(TARGET imos::transports AND NOT EMSCRIPTEN)
     imos::core
     imos::imos
     imos::incs
-    ixwebsocket::ixwebsocket   # ix::getFreePort in the test rig
     imos::warnings)
   target_compile_features(imos_transport_test PRIVATE cxx_std_20)
   target_compile_definitions(imos_transport_test PRIVATE

@@ -8,6 +8,7 @@
 #include <map>
 #include <mutex>
 
+#include <ixwebsocket/IXGetFreePort.h>
 #include <ixwebsocket/IXWebSocket.h>
 #include <ixwebsocket/IXWebSocketServer.h>
 
@@ -278,8 +279,33 @@ Result<void> Ws40Server::start() {
     if (impl_->started) {
         return makeError(ErrorCode::WrongState, "server already started");
     }
+    // config.port == 0 asks for a kernel-assigned ephemeral port. IXWebSocket
+    // can bind port 0 but keeps the kernel's choice private, so the port is
+    // probed here (bind 0 → getsockname → close) and the listen retried:
+    // another process can claim the probed port between the probe socket
+    // closing and the listener binding it.
+    const bool ephemeral = impl_->config.port == 0;
+    const int maxAttempts = ephemeral ? 8 : 1;
+    for (int attempt = 0; attempt < maxAttempts; ++attempt) {
+        const int port = ephemeral ? ix::getFreePort() : impl_->config.port;
+        if (port <= 0) {
+            continue;  // probe failed outright; re-probe
+        }
+        if (listenOn(port)) {
+            impl_->config.port = port;
+            impl_->started = true;
+            return {};
+        }
+    }
+    return makeError(
+        ErrorCode::IoError,
+        "ws40 server failed to listen on " + impl_->config.host + ":" +
+            (ephemeral ? std::string{"<ephemeral>"} : std::to_string(impl_->config.port)));
+}
+
+bool Ws40Server::listenOn(int port) {
     impl_->server = std::make_unique<ix::WebSocketServer>(
-        impl_->config.port, impl_->config.host, ix::SocketServer::kDefaultTcpBacklog,
+        port, impl_->config.host, ix::SocketServer::kDefaultTcpBacklog,
         impl_->config.maxConnections, impl_->config.handshakeTimeoutSecs);
     if (!impl_->config.enableDeflate) {
         impl_->server->disablePerMessageDeflate();
@@ -329,12 +355,9 @@ Result<void> Ws40Server::start() {
 
     if (const auto listening = impl_->server->listenAndStart(); !listening) {
         impl_->server.reset();
-        return makeError(ErrorCode::IoError, "ws40 server failed to listen on " +
-                                                 impl_->config.host + ":" +
-                                                 std::to_string(impl_->config.port));
+        return false;
     }
-    impl_->started = true;
-    return {};
+    return true;
 }
 
 void Ws40Server::stop() {
