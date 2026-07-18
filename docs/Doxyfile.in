@@ -1,0 +1,107 @@
+# SPDX-FileCopyrightText: 2026 Javier O. Cordero Pérez
+# SPDX-License-Identifier: Apache-2.0
+#
+# Doxygen configuration template (plan §15). CMake substitutes the @VARS@ and
+# writes the resolved Doxyfile into the build tree; see docs/CMakeLists.txt.
+# Tuned for Doxygen 1.9+ (developed against 1.15). Everything not set here
+# keeps its Doxygen default.
+
+# ---- project identity -------------------------------------------------------
+PROJECT_NAME           = "ImaginaryMOS"
+PROJECT_NUMBER         = "@PROJECT_VERSION@"
+PROJECT_BRIEF          = "Portable C++20 MOS Protocol v4.0 library suite (imos / incs)"
+OUTPUT_DIRECTORY       = "@DOXYGEN_OUTPUT_DIR@"
+CREATE_SUBDIRS         = NO
+ALLOW_UNICODE_NAMES    = YES
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = "@PROJECT_SOURCE_DIR@"
+TAB_SIZE               = 4
+
+# ---- input ------------------------------------------------------------------
+# The narrative guide pages come first so the mainpage resolves, followed by
+# the public headers of every shipped component.
+INPUT                  = "@PROJECT_SOURCE_DIR@/docs/api" \
+                         "@PROJECT_SOURCE_DIR@/core/include" \
+                         "@PROJECT_SOURCE_DIR@/imos/include" \
+                         "@PROJECT_SOURCE_DIR@/incs/include" \
+                         "@PROJECT_SOURCE_DIR@/store/include" \
+                         "@PROJECT_SOURCE_DIR@/transports/include" \
+                         "@PROJECT_SOURCE_DIR@/capi/include"
+FILE_PATTERNS          = *.h *.hpp *.md
+RECURSIVE              = YES
+# The generated codec registry/views are machine-emitted and voluminous; the
+# hand-written codec surface (codec::Message et al.) documents the model.
+EXCLUDE_PATTERNS       = */codec/gen/* */gen/* *_export.h
+EXAMPLE_PATH           = "@PROJECT_SOURCE_DIR@"
+IMAGE_PATH             = "@PROJECT_SOURCE_DIR@/docs/api"
+USE_MDFILE_AS_MAINPAGE = "@PROJECT_SOURCE_DIR@/docs/api/00-mainpage.md"
+
+# ---- what to extract --------------------------------------------------------
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_LOCAL_CLASSES  = NO
+HIDE_UNDOC_MEMBERS     = NO
+HIDE_UNDOC_CLASSES     = NO
+CASE_SENSE_NAMES       = YES
+HIDE_SCOPE_NAMES       = NO
+SHOW_INCLUDE_FILES     = YES
+SORT_MEMBER_DOCS       = NO
+SORT_BRIEF_DOCS        = NO
+GENERATE_TODOLIST      = YES
+
+# ---- comment parsing --------------------------------------------------------
+JAVADOC_AUTOBRIEF      = YES
+QT_AUTOBRIEF           = YES
+MARKDOWN_SUPPORT       = YES
+TOC_INCLUDE_HEADINGS   = 3
+AUTOLINK_SUPPORT       = YES
+BUILTIN_STL_SUPPORT    = YES
+DISTRIBUTE_GROUP_DOC   = YES
+
+# ---- warnings ---------------------------------------------------------------
+QUIET                  = YES
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = NO
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = NO
+WARN_AS_ERROR          = NO
+
+# ---- preprocessing ----------------------------------------------------------
+# Erase the visibility/export macros so signatures read cleanly, and define the
+# language level so the __cplusplus-gated code is visible.
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+SEARCH_INCLUDES        = YES
+PREDEFINED             = IMOS_CORE_API= \
+                         IMOS_IMOS_API= \
+                         IMOS_INCS_API= \
+                         IMOS_STORE_FILE_API= \
+                         IMOS_TRANSPORTS_API= \
+                         IMOS_CAPI_API= \
+                         __cplusplus=202002L
+
+# ---- HTML output ------------------------------------------------------------
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+GENERATE_LATEX         = NO
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = NO
+FULL_SIDEBAR           = NO
+HTML_COLORSTYLE        = AUTO_LIGHT
+SOURCE_BROWSER         = YES
+REFERENCED_BY_RELATION = NO
+REFERENCES_RELATION    = NO
+VERBATIM_HEADERS       = YES
+
+# ---- diagrams (graphviz) ----------------------------------------------------
+HAVE_DOT               = @DOXYGEN_HAVE_DOT@
+DOT_IMAGE_FORMAT       = svg
+INTERACTIVE_SVG        = YES
+CLASS_GRAPH            = YES
+COLLABORATION_GRAPH    = NO
+GROUP_GRAPHS           = YES
+INCLUDE_GRAPH          = NO
+INCLUDED_BY_GRAPH      = NO
+DOT_MULTI_TARGETS      = YES

@@ -63,6 +63,11 @@ if(IMOS_BUILD_TESTS)
   add_subdirectory(tests)
 endif()
 
+# ---- documentation (optional, off by default) ------------------------
+# Doxygen API reference + narrative guides (plan §15). Self-gates on
+# IMOS_BUILD_DOCS and the presence of doxygen.
+add_subdirectory(docs)
+
 # ---- install / package config ----------------------------------------
 # Component install rules (libs + headers) are emitted by imos_add_library when
 # IMOS_INSTALL is on. The CMake package config + exported target set, which need

@@ -150,6 +150,21 @@ Key options (see `cmake/IMOSOptions.cmake`): `IMOS_BUILD_SHARED`,
 `IMOS_ENABLE_COMPAT28`, `IMOS_ENABLE_WS3`, `IMOS_BUILD_TESTS`,
 `IMOS_BUILD_TOOLS`.
 
+## Documentation
+
+A Doxygen site combines the extracted C++ API reference with narrative guides —
+a getting-started/setup walkthrough, an architecture overview, and a dedicated
+page per MOS profile (0–7) showing both roles. It is off by default; build it
+with:
+
+```sh
+cmake --preset linux -DIMOS_BUILD_DOCS=ON
+cmake --build --preset linux --target docs   # → build/linux/docs/html/index.html
+```
+
+Needs `doxygen` (and `graphviz`/`dot` for diagrams). See
+[`docs/README.md`](docs/README.md).
+
 ## Spec fixtures
 
 The MOS 4.0 DTD, XSD, and every example message are extracted from the project's
