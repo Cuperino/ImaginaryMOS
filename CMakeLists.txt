@@ -70,26 +70,11 @@ add_subdirectory(docs)
 
 # ---- install / package config ----------------------------------------
 # Component install rules (libs + headers) are emitted by imos_add_library when
-# IMOS_INSTALL is on. The CMake package config + exported target set, which need
-# a find_dependency story for the vendored static deps, is an M7 deliverable
-# (plan §9 packaging) and is gated off until then.
-option(IMOS_INSTALL_PACKAGE "Generate the CMake package config + export set (M7)" OFF)
+# IMOS_INSTALL is on. The full packaging deliverable (plan §9, M7) — exported
+# CMake package, pkg-config, self-contained static archives, CPack bundles — is
+# assembled by IMOSPackaging once every component target exists.
 if(IMOS_INSTALL AND IMOS_INSTALL_PACKAGE)
-  include(CMakePackageConfigHelpers)
-  include(GNUInstallDirs)
-  set(IMOS_CMAKE_CONFIG_DEST "${CMAKE_INSTALL_LIBDIR}/cmake/ImaginaryMOS")
-  configure_package_config_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/ImaginaryMOSConfig.cmake.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/ImaginaryMOSConfig.cmake"
-    INSTALL_DESTINATION "${IMOS_CMAKE_CONFIG_DEST}")
-  write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/ImaginaryMOSConfigVersion.cmake"
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion)
-  install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/ImaginaryMOSConfig.cmake"
-    "${CMAKE_CURRENT_BINARY_DIR}/ImaginaryMOSConfigVersion.cmake"
-    DESTINATION "${IMOS_CMAKE_CONFIG_DEST}")
+  include(IMOSPackaging)
 endif()
 
 message(STATUS "ImaginaryMOS ${PROJECT_VERSION} — "

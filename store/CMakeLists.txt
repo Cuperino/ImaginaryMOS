@@ -11,5 +11,5 @@ imos_add_library(store_file
     file_store.cpp
   LINK_PUBLIC
     imos::core
-  LINK_PRIVATE
+  VENDORED
     ZLIB::ZLIB)

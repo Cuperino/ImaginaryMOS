@@ -63,6 +63,43 @@ jobs:
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
 
+  # --- Packaging: install/export, CPack bundles, consumer smoke (M7) --
+  package:
+    name: package ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux,   os: ubuntu-latest,  preset: linux-package }
+          - { name: macos,   os: macos-latest,   preset: macos-package }
+          - { name: windows, os: windows-latest, preset: windows-package }
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: lukka/get-cmake@latest
+      - name: Set up MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Configure + build
+        run: |
+          cmake --preset ${{ matrix.preset }}
+          cmake --build --preset ${{ matrix.preset }}
+      - name: Install-and-link consumer smoke (plan §9 exit criterion)
+        run: ctest --preset ${{ matrix.preset }} -R Packaging.ConsumerSmoke --output-on-failure
+      - name: CPack (tarball / .deb / zip)
+        run: cpack --preset ${{ matrix.preset }}
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.name }}
+          path: |
+            build/${{ matrix.preset }}/*.tar.gz
+            build/${{ matrix.preset }}/*.deb
+            build/${{ matrix.preset }}/*.zip
+          if-no-files-found: error
+
   # --- Cross-compile build-only (Android, iOS, WebAssembly) -----------
   build-android:
     name: build android
@@ -80,6 +117,16 @@ jobs:
           echo "Using Android NDK at: $ANDROID_NDK"
           cmake --preset android
           cmake --build --preset android
+      - name: Build the Prefab AAR (M7 packaging)
+        run: |
+          export ANDROID_NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          packaging/android/make_aar.sh
+      - name: Upload AAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-android-aar
+          path: build/android-aar/*.aar
+          if-no-files-found: error
 
   build-wasm:
     name: wasm build + node P0 smoke
@@ -95,6 +142,14 @@ jobs:
         run: |
           cmake --preset wasm
           cmake --build --preset wasm
+      - name: Build the wasm bundle (M7 packaging)
+        run: packaging/wasm/bundle_wasm.sh
+      - name: Upload wasm bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-wasm
+          path: build/wasm-bundle/*.tar.gz
+          if-no-files-found: error
       - name: Configure + build (native host for the smoke server)
         run: |
           cmake --preset linux
@@ -118,6 +173,14 @@ jobs:
         run: |
           cmake --preset ios
           cmake --build --preset ios
+      - name: Build the XCFramework (M7 packaging)
+        run: packaging/apple/make_xcframework.sh
+      - name: Upload XCFramework
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-ios-xcframework
+          path: build/apple/*.xcframework.zip
+          if-no-files-found: error
 
   # --- Fuzzers: smoke on PRs, extended nightly (plan §10) --------------
   fuzz:

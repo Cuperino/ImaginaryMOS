@@ -110,3 +110,30 @@ gtest_discover_tests(imos_store_test DISCOVERY_TIMEOUT 30)
 if(IMOS_BUILD_FUZZERS)
   add_subdirectory(fuzz)
 endif()
+
+# ---- packaging: install-and-link consumer smoke (plan §9 / M7) --------
+# Installs the built tree into a throwaway prefix and configures/builds/runs a
+# clean find_package(ImaginaryMOS) consumer against it, in every link style the
+# package ships. Opt-in (IMOS_BUILD_PACKAGING_TESTS) because it drives a full
+# nested install + configure + build; the `package` CI job turns it on.
+if(IMOS_INSTALL_PACKAGE AND IMOS_BUILD_PACKAGING_TESTS)
+  set(_imos_smoke_styles "")
+  if(IMOS_BUILD_SHARED)
+    list(APPEND _imos_smoke_styles shared)
+  endif()
+  if(IMOS_BUILD_STATIC)
+    list(APPEND _imos_smoke_styles static)
+  endif()
+  add_test(NAME Packaging.ConsumerSmoke
+    COMMAND "${CMAKE_COMMAND}"
+      "-DIMOS_BUILD_DIR=${CMAKE_BINARY_DIR}"
+      "-DIMOS_CONSUMER_SRC=${CMAKE_CURRENT_SOURCE_DIR}/packaging/consumer"
+      "-DIMOS_WORK=${CMAKE_BINARY_DIR}/packaging-smoke"
+      "-DIMOS_GENERATOR=${CMAKE_GENERATOR}"
+      "-DIMOS_BUILD_TYPE=$<CONFIG>"
+      "-DIMOS_LINK_STYLES=${_imos_smoke_styles}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/packaging/consumer_smoke.cmake")
+  # It installs the whole build, so give it room and keep it off the shared
+  # fixture path of the other suites.
+  set_tests_properties(Packaging.ConsumerSmoke PROPERTIES TIMEOUT 600 RUN_SERIAL ON)
+endif()

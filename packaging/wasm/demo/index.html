@@ -1,0 +1,52 @@
+<!--
+SPDX-FileCopyrightText: 2026 Javier O. Cordero Pérez
+SPDX-License-Identifier: Apache-2.0
+-->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ImaginaryMOS — WebAssembly demo</title>
+  <style>
+    body { font: 15px/1.5 system-ui, sans-serif; max-width: 46rem; margin: 3rem auto; padding: 0 1rem; }
+    code, pre { background: #f4f4f4; border-radius: 4px; }
+    pre { padding: 1rem; overflow-x: auto; }
+    code { padding: 0.1rem 0.3rem; }
+    #log { white-space: pre-wrap; border: 1px solid #ddd; border-radius: 4px; padding: 1rem; min-height: 4rem; }
+    h1 { font-size: 1.4rem; }
+  </style>
+</head>
+<body>
+  <h1>ImaginaryMOS — WebAssembly demo</h1>
+  <p>
+    This page is the template shipped with the WebAssembly bundle. The
+    ImaginaryMOS libraries build as static archives that you link into your own
+    Emscripten module (see <code>BUILDING.md</code>); this page loads that
+    module and drives a Profile&nbsp;0 handshake against an NCS over the browser
+    WebSocket API.
+  </p>
+
+  <p>Point it at your NCS endpoint and open the console:</p>
+  <pre>emcc app.cpp -I include lib/libimos.a lib/libimos_transports.a \
+  lib/libimos_core.a -lwebsocket.js -o imos_demo.js</pre>
+
+  <div id="log">Load your compiled <code>imos_demo.js</code> below…</div>
+
+  <script>
+    // The bundle intentionally does not ship a prebuilt module — the demo module
+    // is your application. Drop the emitted imos_demo.js next to this file and
+    // uncomment the loader:
+    //
+    //   const s = document.createElement('script');
+    //   s.src = 'imos_demo.js';
+    //   document.body.appendChild(s);
+    //
+    // Emscripten's Module hooks let this page surface progress into #log:
+    window.Module = {
+      print: (t) => { document.getElementById('log').textContent += t + '\n'; },
+      printErr: (t) => { document.getElementById('log').textContent += '[err] ' + t + '\n'; },
+    };
+  </script>
+</body>
+</html>

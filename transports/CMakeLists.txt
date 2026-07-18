@@ -27,5 +27,5 @@ imos_add_library(transports
     ws40_ixws/ws40_server.cpp
   LINK_PUBLIC
     imos::core                      # ITransport/PeerSession/encoding in our API
-  LINK_PRIVATE
+  VENDORED
     ixwebsocket::ixwebsocket)

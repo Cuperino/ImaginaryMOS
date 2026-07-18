@@ -62,6 +62,16 @@
       }
     },
     {
+      "name": "linux-package",
+      "displayName": "Linux packaging (install/export, CPack, consumer smoke)",
+      "inherits": "linux-release",
+      "cacheVariables": {
+        "IMOS_INSTALL_PACKAGE": "ON",
+        "IMOS_BUILD_PACKAGING_TESTS": "ON",
+        "IMOS_BUILD_TOOLS": "OFF"
+      }
+    },
+    {
       "name": "macos",
       "displayName": "macOS (Apple Clang, arm64/x86_64)",
       "inherits": "base",
@@ -72,11 +82,33 @@
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
     },
     {
+      "name": "macos-package",
+      "displayName": "macOS packaging (universal libs, CPack, consumer smoke)",
+      "inherits": "macos",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "IMOS_INSTALL_PACKAGE": "ON",
+        "IMOS_BUILD_PACKAGING_TESTS": "ON",
+        "IMOS_BUILD_TOOLS": "OFF"
+      }
+    },
+    {
       "name": "windows",
       "displayName": "Windows (MSVC, x64)",
       "inherits": "base",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" },
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "windows-package",
+      "displayName": "Windows packaging (DLL + import libs, zip, consumer smoke)",
+      "inherits": "windows",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "IMOS_INSTALL_PACKAGE": "ON",
+        "IMOS_BUILD_PACKAGING_TESTS": "ON",
+        "IMOS_BUILD_TOOLS": "OFF"
+      }
     },
     {
       "name": "android",
@@ -124,8 +156,11 @@
     { "name": "linux-coverage", "configurePreset": "linux-coverage" },
     { "name": "linux-tls", "configurePreset": "linux-tls" },
     { "name": "linux-fuzz", "configurePreset": "linux-fuzz" },
+    { "name": "linux-package", "configurePreset": "linux-package" },
     { "name": "macos", "configurePreset": "macos" },
+    { "name": "macos-package", "configurePreset": "macos-package" },
     { "name": "windows", "configurePreset": "windows" },
+    { "name": "windows-package", "configurePreset": "windows-package" },
     { "name": "android", "configurePreset": "android" },
     { "name": "ios", "configurePreset": "ios" },
     { "name": "wasm", "configurePreset": "wasm" }
@@ -144,7 +179,18 @@
     { "name": "linux-coverage", "inherits": "base", "configurePreset": "linux-coverage" },
     { "name": "linux-tls", "inherits": "base", "configurePreset": "linux-tls" },
     { "name": "linux-fuzz", "inherits": "base", "configurePreset": "linux-fuzz" },
+    { "name": "linux-package", "inherits": "base", "configurePreset": "linux-package" },
     { "name": "macos", "inherits": "base", "configurePreset": "macos" },
-    { "name": "windows", "inherits": "base", "configurePreset": "windows" }
+    { "name": "macos-package", "inherits": "base", "configurePreset": "macos-package" },
+    { "name": "windows", "inherits": "base", "configurePreset": "windows" },
+    { "name": "windows-package", "inherits": "base", "configurePreset": "windows-package" }
+  ],
+  "packagePresets": [
+    { "name": "linux-package", "configurePreset": "linux-package",
+      "displayName": "Linux tarball + .deb" },
+    { "name": "macos-package", "configurePreset": "macos-package",
+      "displayName": "macOS tarball" },
+    { "name": "windows-package", "configurePreset": "windows-package",
+      "displayName": "Windows zip" }
   ]
 }

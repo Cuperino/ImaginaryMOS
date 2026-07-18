@@ -25,6 +25,16 @@ option(IMOS_BUILD_TESTS "Build the test suite (GoogleTest)" ${IMOS_IS_TOP_LEVEL}
 option(IMOS_BUILD_TOOLS "Build the tools (fixtures-verify, imos-cli, …)" ${IMOS_IS_TOP_LEVEL})
 option(IMOS_INSTALL     "Generate install/export rules" ${IMOS_IS_TOP_LEVEL})
 
+# Packaging (plan §9, M7). Generates the CMake package config + exported target
+# set, the pkg-config files, self-contained static archives (the vendored deps
+# are folded in — see cmake/IMOSPackaging.cmake), and CPack metadata. Defined
+# here (rather than at the top level) so imos_add_library can route the vendored
+# deps out of the install interface while the package build is active.
+option(IMOS_INSTALL_PACKAGE
+  "Generate the CMake package config + export set, pkg-config, and CPack (M7)" OFF)
+option(IMOS_BUILD_PACKAGING_TESTS
+  "Register the install-and-link consumer smoke test (needs IMOS_INSTALL_PACKAGE)" OFF)
+
 option(IMOS_BUILD_FUZZERS "Build the libFuzzer harnesses (Clang only, M1+)" OFF)
 
 option(IMOS_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)

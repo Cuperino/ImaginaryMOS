@@ -71,8 +71,14 @@ contribution rules.
 > the peer advertises Profile 3). CI now enforces the M5 gates: ≥90% line
 > coverage on the hand-written core, 100% message-type fixture coverage,
 > and a conformance-matrix artifact with Profiles 0–7 complete on the 4.0
-> WebSocket transport. Next up: M6 legacy transports (2.8 TCP, 3.x SOAP).
-> The public API is not yet stable.
+> WebSocket transport. Ahead of M6, the **M7 packaging layer** has landed:
+> an exported CMake package (`find_package(ImaginaryMOS)`), pkg-config files,
+> self-contained static archives (the vendored libxml2/zlib/IXWebSocket folded
+> in, so static consumers need no `find_dependency` on them), CPack
+> tarball/`.deb`/zip bundles, and the XCFramework/AAR/wasm bundle scripts —
+> all guarded by an install-and-link consumer smoke test. Still ahead: M6
+> legacy transports (2.8 TCP, 3.x SOAP) and the rest of M7 (dialect profiles
+> and the C ABI freeze). The public API is not yet stable.
 
 ## About MOS Protocol
 

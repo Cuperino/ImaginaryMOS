@@ -2,9 +2,38 @@
 
 # SPDX-FileCopyrightText: 2026 Javier O. Cordero Pérez
 # SPDX-License-Identifier: Apache-2.0
+#
+# Package config for ImaginaryMOS (plan §9). Consume with:
+#   find_package(ImaginaryMOS CONFIG REQUIRED)
+#   target_link_libraries(app PRIVATE imos::imos imos::incs imos::transports)
 
-include(CMakeFindDependencyMacro)
+# Resolve the imported targets the exported set references (see the file for the
+# vendored-vs-system-deps story) before loading the targets themselves.
+include("${CMAKE_CURRENT_LIST_DIR}/ImaginaryMOSDependencies.cmake")
 
 include("${CMAKE_CURRENT_LIST_DIR}/ImaginaryMOSTargets.cmake")
+
+# The export carries the link-style-suffixed targets (imos::imos-shared and
+# imos::imos-static). Recreate the un-suffixed convenience targets, each
+# forwarding to the preferred style — shared when this install has it, else
+# static (e.g. the static-only iOS/WebAssembly packages).
+set(_imos_components @IMOS_PACKAGE_COMPONENTS@)
+foreach(_imos_c IN LISTS _imos_components)
+  if(NOT TARGET imos::${_imos_c})
+    if(TARGET imos::${_imos_c}-shared)
+      set(_imos_pref "imos::${_imos_c}-shared")
+    elseif(TARGET imos::${_imos_c}-static)
+      set(_imos_pref "imos::${_imos_c}-static")
+    else()
+      continue()
+    endif()
+    add_library(imos::${_imos_c} INTERFACE IMPORTED)
+    set_target_properties(imos::${_imos_c} PROPERTIES
+      INTERFACE_LINK_LIBRARIES "${_imos_pref}")
+  endif()
+endforeach()
+unset(_imos_c)
+unset(_imos_pref)
+unset(_imos_components)
 
 check_required_components(ImaginaryMOS)

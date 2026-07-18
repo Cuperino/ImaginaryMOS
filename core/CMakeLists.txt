@@ -41,6 +41,6 @@ imos_add_library(core
     session/time_format.cpp
     ws40/basic_auth.cpp
     ws40/url.cpp
-  LINK_PRIVATE
+  VENDORED
     LibXml2::LibXml2
     ZLIB::ZLIB)
