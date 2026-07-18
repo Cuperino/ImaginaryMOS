@@ -53,6 +53,6 @@ explicit `imos::<lib>-shared` / `imos::<lib>-static` targets are also exported.
 ## pkg-config
 
 One `.pc` per public library in `lib/pkgconfig` (`imos_core`, `imos`, `incs`,
-`imos_store_file`, `imos_transports`, `imos_capi`), with `Requires` chained to
+`imos_store_file`, `imos_transports`), with `Requires` chained to
 the base engine and `Libs.private` carrying the folded system libraries for the
 static case.

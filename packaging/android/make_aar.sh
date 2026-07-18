@@ -26,7 +26,6 @@ MODULES=(
   "incs|libincs|:imos_core"
   "imos_store_file|libimos_store_file|:imos_core"
   "imos_transports|libimos_transports|:imos_core"
-  "imos_capi|libimos_capi|:imos"
 )
 
 STAGE="${OUT_DIR}/aar"

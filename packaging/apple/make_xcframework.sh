@@ -24,7 +24,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 # Public libraries, base engine last so libtool sees the fat core once.
-COMPONENTS=(imos incs imos_transports imos_store_file imos_capi imos_core)
+COMPONENTS=(imos incs imos_transports imos_store_file imos_core)
 
 # slice name | CMAKE_OSX_SYSROOT | architectures
 SLICES=(

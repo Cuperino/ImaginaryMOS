@@ -8,8 +8,7 @@
 
 #include <cstdio>
 
-#include <imos/imos.h>    // imos role
-#include <imos/imos_c.h>  // C ABI (imos_capi)
+#include <imos/imos.h>  // imos role
 #include <imos/store/file_store.h>
 #include <imos/transports/ws40.h>
 #include <imos/version.h>  // core: coreVersion / dependencyVersions
@@ -31,9 +30,6 @@ int main() {
                 imos::libraryName().data(), static_cast<int>(iv.size()), iv.data());
     std::printf("incs role   : %.*s / %.*s\n", static_cast<int>(incs::libraryName().size()),
                 incs::libraryName().data(), static_cast<int>(nv.size()), nv.data());
-
-    // C ABI.
-    std::printf("imos_capi   : %s (abi %d)\n", imos_version(), imos_abi_version());
 
     // Force the transport and store objects — and thus the folded IXWebSocket —
     // to link, without opening sockets or files. Taking the address of a

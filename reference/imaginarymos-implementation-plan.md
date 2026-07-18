@@ -12,7 +12,7 @@
 
 ImaginaryMOS is a portable protocol library suite implementing the full MOS Protocol v4.0 (all Profiles 0–7) with backwards compatibility for the MOS 2.8.x dual-socket TCP transport and the MOS 3.x SOAP WebService transport. It ships as two role libraries built on a shared core: `imos`, the Media Object Server side, which is the primary product and is designed to be embedded inside MOS devices (playout servers, graphics engines, prompters, publishing endpoints); and `incs`, the NCS side, which exists to serve NCS integrators and — critically for this project — to power the NRCS simulator that substitutes for commercial newsroom systems we cannot access during interoperability testing.
 
-The defining architectural decision is a **sans-I/O protocol core**: every state machine, codec, and profile workflow is implemented free of sockets, threads, and clocks, with transports, time, and persistence injected behind narrow interfaces. This is what makes one codebase honestly portable across Linux, macOS, Windows, Android, iOS, and WebAssembly (where the Emscripten WebSocket API replaces IXWebSocket), what makes both static and dynamic linking straightforward, what makes a stable C ABI practical, and what lets GoogleTest exercise every profile deterministically without a network. Reliability behaviors that the spec asks for — strictly sequential per-channel delivery, retry on timeout, and durable buffering of unacknowledged messages across restarts — are first-class in the design via the `IMessageStore` interface and its file-backed implementation.
+The defining architectural decision is a **sans-I/O protocol core**: every state machine, codec, and profile workflow is implemented free of sockets, threads, and clocks, with transports, time, and persistence injected behind narrow interfaces. This is what makes one codebase honestly portable across Linux, macOS, Windows, Android, iOS, and WebAssembly (where the Emscripten WebSocket API replaces IXWebSocket), what makes both static and dynamic linking straightforward, and what lets GoogleTest exercise every profile deterministically without a network. Reliability behaviors that the spec asks for — strictly sequential per-channel delivery, retry on timeout, and durable buffering of unacknowledged messages across restarts — are first-class in the design via the `IMessageStore` interface and its file-backed implementation.
 
 The plan below is grounded in the v4.0.1 specification text: the profile and message inventory in §3 was extracted from the project's spec copy, and the details that the spec leaves ambiguous (notably message encoding over WebSocket) are called out explicitly and resolved at plan review rather than silently assumed; the encoding decision is recorded in §3.4, and all review resolutions are logged in §14.
 
@@ -29,7 +29,7 @@ The plan below is grounded in the v4.0.1 specification text: the profile and mes
 | GoogleTest/GoogleMock, full coverage of each profile | §10 test strategy; conformance matrix gate |
 | Static and dynamic linking | §9 |
 | Six official targets incl. WASM via Emscripten API | §5.4, §9 |
-| C ABI in scope | §8.2 |
+| C++-embed consumption; no separate C ABI | §8.2 |
 | `IMessageStore` with file-backed persistence | §6 |
 | Dialects: Sofie, iNEWS, ENPS, Octopus | §7 |
 | No NRCS access → simulation for M8 interop | §11; milestone M8 |
@@ -84,7 +84,7 @@ The spec's general message-format section (carried forward into 4.0) mandates IS
 
 **Strict/lenient duality.** In production the parser is Postel-lenient exactly as the spec directs (unknown tags ignored and preserved; well-formedness required, validity not). In tests and in a debug configuration, every inbound and outbound message is additionally validated against the MOS 4.0 XSD (extracted from spec chapter 9 into our fixtures) so drift is caught early without punishing field interop.
 
-**No surprises at boundaries.** No exceptions or C++ types cross the public C++ API in error paths (a `Result<T, Error>` type carries failures); nothing C++ crosses the C ABI at all.
+**No surprises at boundaries.** No exceptions or C++ types cross the public C++ API in error paths (a `Result<T, Error>` type carries failures).
 
 ### 4.2 Layering
 
@@ -116,7 +116,7 @@ The spec's general message-format section (carried forward into 4.0) mandates IS
 
 ### 4.3 Deliverable libraries and repository layout
 
-The build produces `imos_core` (engine; not a supported public API by itself), `imos` and `incs` (role libraries, C++ API), `imos_capi` and `incs_capi` (C ABI shims), and optional modules `imos_compat28`, `imos_ws3`, `imos_plugin` (web-control messages), and `imos_store_file` (the default `IMessageStore`). Each is available as both a static archive and a shared library (§9). Tools built from the same tree: `incs-sim` (the NRCS simulator, §11), `mos-sim` (a scriptable device peer for testing `incs`), and `imos-cli` (message inspector, capture converter, store dump/repair).
+The build produces `imos_core` (engine; not a supported public API by itself), `imos` and `incs` (role libraries, C++ API), and optional modules `imos_compat28`, `imos_ws3`, `imos_plugin` (web-control messages), and `imos_store_file` (the default `IMessageStore`). Each is available as both a static archive and a shared library (§9). Tools built from the same tree: `incs-sim` (the NRCS simulator, §11), `mos-sim` (a scriptable device peer for testing `incs`), and `imos-cli` (message inspector, capture converter, store dump/repair).
 
 ```
 ImaginaryMOS/
@@ -126,7 +126,6 @@ ImaginaryMOS/
 │  ├─ codec/  ├─ session/  ├─ profiles/  ├─ encoding/
 ├─ imos/                      # device-role API
 ├─ incs/                      # NCS-role API
-├─ capi/                      # C ABI (imos_c.h, incs_c.h)
 ├─ transports/                # ws40_ixws / ws40_emscripten / tcp28 / ws3_soap
 ├─ store/                     # IMessageStore + file backend
 ├─ dialects/                  # sofie / inews / enps / octopus profiles
@@ -237,11 +236,11 @@ dev.attach(myControlSink);         // Profile 5
 while (running) dev.poll(std::chrono::milliseconds{10});   // pull mode; no library threads
 ```
 
-Peers are added declaratively (endpoint URL or 2.8 host/ports, dialect preset, standard/passive topology), and every inbound event carries its `PeerSession` context. The C++ API is source-stable within a major version; binary stability is promised only at the C layer.
+Peers are added declaratively (endpoint URL or 2.8 host/ports, dialect preset, standard/passive topology), and every inbound event carries its `PeerSession` context. The C++ API is source-stable within a major version; there is no separate binary-stable layer.
 
-### 8.2 C ABI
+### 8.2 Language bindings (no C ABI)
 
-`imos_c.h` / `incs_c.h` follow strict C-ABI discipline: opaque handles (`imos_device_t*`, `imos_peer_t*`), integer status codes with `imos_status_message()`, UTF-8 strings with explicit ownership (caller-owned inputs; library-owned outputs freed via `imos_string_free`), callback registration as function pointer + `void* user_data`, and an event-pump entry point (`imos_device_poll`) mirroring pull mode so single-threaded hosts and foreign-language runtimes integrate cleanly. No exception may cross the boundary (enforced by `noexcept` shims and a catch-all-to-status wrapper), no C++ type appears in any signature, and struct arguments are versioned by a leading `size` field to allow additive evolution. Versioning: `IMOS_ABI_VERSION`, `imos_version()` for the semantic version, ELF symbol versioning plus SOVERSION on Linux, `__declspec(dllexport)`/`visibility("default")` export macros with hidden-by-default builds everywhere. The C ABI covers both `imos` and `incs` fully at 1.0 — `imos` because it is the embedding and future-bindings surface, `incs` per plan review, so simulator hosts and NCS integrators get the same stability guarantee. Thread-safety contracts are documented per function and enforced with debug-mode assertions.
+**Decision of record:** ImaginaryMOS does **not** ship a C ABI. Every intended consumer embeds the C++ libraries directly — native C++ hosts, Flutter (which builds C++ via FFI-plugin native code), Rust (which binds C++ through [`cxx`](https://cxx.rs)), and Node (through a C++ addon). A C ABI would be a second public surface to design, test, symbol-version, and maintain for no consumer that needs it, so it is out of scope. The binary-stability and `IMOS_ABI_VERSION` machinery an ABI would require does not exist; bindings pin a source revision and rebuild against a matching toolchain. If a plain-C or dlopen-style consumer ever appears, a thin `extern "C"` shim can be reintroduced as an additive, separately-versioned module without disturbing the C++ API.
 
 ## 9. Build system, targets, packaging
 
@@ -301,7 +300,7 @@ Milestones are cumulative and each ends with its tests in CI. The user-visible n
 | **M4 — Profiles 4, 5, 7** | `roReqAll`/`roListAll`, `roStorySend` incl. `Read1stMEMasBody`, `roItemCue`/`roCtrl` (P5), `roReqStoryAction` (P7) | P4+P5+P7 conformance green; NewsML-payload preservation tests green | ~4 wk |
 | **M5 — Profiles 6, 3** | FQID utilities (P6), search family, object create/action, `mosItemReplace` (P3) | P3+P6 conformance green; coverage gate ≥ 90 % core | ~3 wk |
 | **M6 — Legacy transports** | `imos_compat28` (TCP, UCS-2, legacy-13 normalization), `imos_ws3` (3.8.4 WSDL spike → SOAP transport), conformance suites re-run per transport | Full matrix green on 2.8 and 3.x (3.8.4) where applicable; 3.8.4 bindings pinned | 4–5 wk |
-| **M7 — Dialects, C ABI freeze, packaging** | Four `DialectProfile`s + delta suites, C ABI complete and frozen, packaging artifacts for all targets (XCFramework, AAR, DLL/zip, tarballs, wasm bundle), docs draft | ABI review signed off; install-and-link smoke tests from a clean consumer project on every target | 3–4 wk |
+| **M7 — Dialects, packaging** | Four `DialectProfile`s + delta suites, packaging artifacts for all targets (XCFramework, AAR, DLL/zip, tarballs, wasm bundle), docs draft | Install-and-link smoke tests from a clean consumer project on every target | 3–4 wk |
 | **M8 — Interoperability** | `incs-sim`/`mos-sim` feature-complete (personalities, fault injection, record/replay), OSS interop lab (mos-connection, mosromgr oracle, Superdesk), soak + extended fuzz | The §11 exit criteria, in full | 4 wk |
 | **M9 — Hardening + RC** | Bug burn-down, performance passes, security review vs. threat model, documentation complete, conformance report generator | Release candidate; zero known sequencing/durability defects | 2–3 wk |
 | **M10 — GA 1.0** | Release, versioning/support policy, maintenance cadence (CVE SLA, dialect-quirk intake process) | Tagged 1.0; support policy published | 1 wk |
@@ -325,11 +324,11 @@ Within M3–M5 the profiles are implemented in the order **1, 2, 4, 5, 7, 6, 3**
 | R-9 | Embedded footprint creep | The size-critical targets (WASM, iOS, Android) build statically, so dead-code elimination plus genuinely link-optional modules bound footprint; no CI size budgets needed |
 | R-10 | `roElementAction`/RO-model semantic corner cases diverge from field behavior | mosromgr as an independent oracle (§11); spec-example fidelity gate |
 
-The draft's open questions were resolved at plan review and are folded into the sections above; the decisions of record are: **OQ-1** the 4.0 wire default follows the spec's UCS-2 mandate over binary WebSocket frames, with UTF-8 as a per-peer configuration and receive-side expectations matching the configured encoding (§3.4); **OQ-2** the MOS 3.x compatibility target is 3.8.4 (§5.3); **OQ-3** the `incs` C ABI ships at 1.0 alongside `imos` (§8.2); **OQ-4** platform floors are Android API 28, iOS 16, Windows 10, macOS 12, and glibc 2.41, with the Linux toolchain pinned to what Debian 13 ships (GCC 14) and Emscripten pinned at 4.0.7 (§9); **OQ-5** the license is Apache-2.0 (the dependency set — IXWebSocket BSD-3, libxml2 MIT, zlib License, GoogleTest BSD-3 — is compatible); **OQ-6** the plug-in (HTML5 web control) module is low priority and stays unscheduled until stakeholders state otherwise (§3.2); **OQ-7** no host logging/metrics framework integration is required — the injected `ILogger` interface is the contract (§4.1).
+The draft's open questions were resolved at plan review and are folded into the sections above; the decisions of record are: **OQ-1** the 4.0 wire default follows the spec's UCS-2 mandate over binary WebSocket frames, with UTF-8 as a per-peer configuration and receive-side expectations matching the configured encoding (§3.4); **OQ-2** the MOS 3.x compatibility target is 3.8.4 (§5.3); **OQ-3** no C ABI is shipped — consumers embed the C++ libraries directly, and any future plain-C surface would be an additive, separately-versioned shim (§8.2); **OQ-4** platform floors are Android API 28, iOS 16, Windows 10, macOS 12, and glibc 2.41, with the Linux toolchain pinned to what Debian 13 ships (GCC 14) and Emscripten pinned at 4.0.7 (§9); **OQ-5** the license is Apache-2.0 (the dependency set — IXWebSocket BSD-3, libxml2 MIT, zlib License, GoogleTest BSD-3 — is compatible); **OQ-6** the plug-in (HTML5 web control) module is low priority and stays unscheduled until stakeholders state otherwise (§3.2); **OQ-7** no host logging/metrics framework integration is required — the injected `ILogger` interface is the contract (§4.1).
 
 ## 15. Documentation and final deliverables
 
-Shipping alongside the libraries: Doxygen-generated API references for the C++ and C surfaces; an integrator's guide per profile that mirrors the spec's workflow narratives and shows both roles; a dialect handbook capturing each `DialectProfile` and its delta suite; a porting/embedding guide (pull-mode integration, store tuning for flash, footprint knobs, threading contracts); transport operations notes (certificate policy, passive-mode deployment, firewall guidance straight from the spec's model); the machine-generated conformance matrix and M8 interop report; and worked examples — a minimal device, a prompter-style consumer of `roStorySend`/`roItemCue`, an `incs-sim` scenario cookbook, and a browser demo of the WASM passive-mode client. Post-1.0 maintenance is governed by the support policy from M10: semantic versioning anchored on the C ABI, a security patch SLA, and a standing intake path that converts field captures into dialect regression scenarios.
+Shipping alongside the libraries: Doxygen-generated API references for the C++ surface; an integrator's guide per profile that mirrors the spec's workflow narratives and shows both roles; a dialect handbook capturing each `DialectProfile` and its delta suite; a porting/embedding guide (pull-mode integration, store tuning for flash, footprint knobs, threading contracts); transport operations notes (certificate policy, passive-mode deployment, firewall guidance straight from the spec's model); the machine-generated conformance matrix and M8 interop report; and worked examples — a minimal device, a prompter-style consumer of `roStorySend`/`roItemCue`, an `incs-sim` scenario cookbook, and a browser demo of the WASM passive-mode client. Post-1.0 maintenance is governed by the support policy from M10: semantic versioning of the C++ API, a security patch SLA, and a standing intake path that converts field captures into dialect regression scenarios.
 
 ---
 

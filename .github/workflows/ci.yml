@@ -253,7 +253,7 @@ jobs:
         run: pipx install "clang-format~=21.1"
       - name: Check formatting
         run: |
-          files=$(find core imos incs capi store transports tools tests -type f \
+          files=$(find core imos incs store transports tools tests -type f \
             \( -name '*.cpp' -o -name '*.h' \) -not -path '*/gen/*')
           clang-format --dry-run --Werror $files
       - name: Check generated code is up to date with the schemas

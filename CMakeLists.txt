@@ -46,7 +46,6 @@ add_subdirectory(core)
 add_subdirectory(store)
 add_subdirectory(imos)
 add_subdirectory(incs)
-add_subdirectory(capi)
 add_subdirectory(transports)
 
 # enable_testing() must precede any add_test(), including the fixtures-verify

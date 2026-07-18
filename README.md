@@ -19,9 +19,8 @@ It ships two role libraries over a shared core free from I/O:
 
 The core implements every state machine, codec, and profile workflow free of
 sockets, threads, and clocks — transports, time, and persistence are injected
-behind narrow interfaces. That is what makes one codebase honestly portable
-across **Linux, macOS, Windows, Android, iOS, and WebAssembly**, supports both
-static and dynamic linking, and makes a stable C ABI practical.
+behind narrow interfaces. That is what makes one codebase portable across **Linux, macOS, Windows, Android, iOS, and WebAssembly**, and supports
+both static and dynamic linking. Consumers link to or embed the C++ libraries directly.
 
 See the [implementation plan](reference/imaginarymos-implementation-plan.md) for
 the full design, and [docs/coding-standards.md](docs/coding-standards.md) for
@@ -77,8 +76,8 @@ contribution rules.
 > in, so static consumers need no `find_dependency` on them), CPack
 > tarball/`.deb`/zip bundles, and the XCFramework/AAR/wasm bundle scripts —
 > all guarded by an install-and-link consumer smoke test. Still ahead: M6
-> legacy transports (2.8 TCP, 3.x SOAP) and the rest of M7 (dialect profiles
-> and the C ABI freeze). The public API is not yet stable.
+> legacy transports (2.8 TCP, 3.x SOAP) and the rest of M7 (dialect profiles).
+> The public API is not yet stable.
 
 ## About MOS Protocol
 
@@ -187,7 +186,7 @@ python3 tools/extract_fixtures.py "reference/MOS Protocol 4.0 (Current).html" fi
 ```
 core/        sans-I/O engine: codec, session, profiles, encoding
 imos/        device-role API              incs/   NCS-role API
-capi/        C ABI shims                  transports/ ws40_ixws / emscripten / tcp28 / ws3_soap
+transports/  ws40_ixws / emscripten / tcp28 / ws3_soap
 store/       IMessageStore + file backend dialects/  sofie / inews / enps / octopus
 plugin/      web-control messages         tools/   fixtures-verify, imos-cli, simulators
 tests/       unit / conformance / fuzz    fixtures/  spec DTD, XSD, example messages

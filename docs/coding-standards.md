@@ -12,8 +12,7 @@ inside third-party MOS devices. They are derived from the architecture in the
 
 ## Language and toolchain
 
-- **C++20**, no compiler extensions (`CMAKE_CXX_EXTENSIONS OFF`). The C ABI
-  headers are **C11**-clean and `extern "C"`.
+- **C++20**, no compiler extensions (`CMAKE_CXX_EXTENSIONS OFF`).
 - Supported toolchains: GCC 14+, Clang/Apple Clang, MSVC v143+, Emscripten
   (pinned 4.0.7). Code must compile warning-clean under `-Wall -Wextra
   -Wpedantic` / `/W4` (see `cmake/IMOSWarnings.cmake`).
@@ -29,9 +28,6 @@ inside third-party MOS devices. They are derived from the architecture in the
   deterministically and what makes the WebAssembly build possible.
 - **No exceptions across the public C++ API.** Fallible operations return
   `Result<T, Error>`; exceptions and RTTI stay confined to module internals.
-- **Nothing C++ crosses the C ABI.** Opaque handles, integer status codes,
-  UTF-8 strings with explicit ownership, function-pointer + `void*` callbacks.
-  Every entry point is `noexcept` with a catch-all-to-status wrapper.
 - **Lossless unknown-content retention.** The codec preserves unknown
   elements/attributes and re-emits them (spec's unknown-tag rule + dialect
   passthrough). Opaque `mosPayload` is never re-normalized by default.
@@ -44,9 +40,9 @@ inside third-party MOS devices. They are derived from the architecture in the
 - Hidden by default (`-fvisibility=hidden`) with explicit export macros from
   the generated `<component>_export.h` (e.g. `IMOS_CORE_API`). Add new public
   symbols with the export macro; never widen visibility globally.
-- The C++ API is source-stable within a major version; **binary** stability is
-  promised only at the C ABI. Bump `IMOS_ABI_VERSION` on any incompatible C
-  header change; version additive struct changes with a leading `size` field.
+- The C++ API is source-stable within a major version. There is no binary
+  (ABI) stability guarantee — consumers embed the C++ libraries and rebuild
+  against a matching toolchain.
 
 ## Formatting and naming
 
@@ -54,8 +50,7 @@ inside third-party MOS devices. They are derived from the architecture in the
   100-column). Run `clang-format -i` before committing; CI checks it.
 - Static analysis via **`.clang-tidy`** (informational at M0).
 - Namespaces `imos::` and `incs::`. Types `PascalCase`, functions/variables
-  `camelCase`, constants `kPascalCase`, macros `IMOS_UPPER_SNAKE`. C ABI
-  symbols are `imos_snake_case`.
+  `camelCase`, constants `kPascalCase`, macros `IMOS_UPPER_SNAKE`.
 - Include order: the module's own header first, then a blank line, then C/C++
   standard headers, then third-party, then project headers (`IncludeBlocks:
   Preserve` keeps deliberate grouping).

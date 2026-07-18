@@ -23,7 +23,6 @@ target_link_libraries(imos_smoke_test PRIVATE
   imos::core
   imos::imos
   imos::incs
-  imos::imos_capi
   imos::warnings)
 target_compile_features(imos_smoke_test PRIVATE cxx_std_20)
 

@@ -50,8 +50,8 @@ Windows, Android, and iOS, and in the browser via WebAssembly.
 
 ## Status
 
-The public C++ API is **not yet stable** — it is being hardened toward the 1.0
-C ABI. Treat signatures shown in these guides as current-but-movable, and pin a
+The public C++ API is **not yet stable** — it is being hardened toward 1.0.
+Treat signatures shown in these guides as current-but-movable, and pin a
 commit if you build against them. See the project `README.md` for the milestone
 status blockquote.
 

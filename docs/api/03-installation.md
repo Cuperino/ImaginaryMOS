@@ -36,7 +36,7 @@ target_link_libraries(app PRIVATE imos::imos imos::incs imos::transports)
 `imos::<lib>` resolves to the shared library when the install has one, else the
 static library. The link-style-explicit `imos::<lib>-shared` and
 `imos::<lib>-static` targets are exported too. Available libraries: `imos`,
-`incs`, `core`, `store_file`, `transports`, `imos_capi`.
+`incs`, `core`, `store_file`, `transports`.
 
 `ImaginaryMOSConfig.cmake` pulls in `ImaginaryMOSDependencies.cmake`, which
 resolves whatever the export still references — for a default (vendored) install

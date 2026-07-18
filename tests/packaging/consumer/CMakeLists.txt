@@ -23,8 +23,8 @@ add_executable(imos_consumer main.cpp)
 if(IMOS_CONSUMER_LINK STREQUAL "static")
   target_link_libraries(imos_consumer PRIVATE
     imos::imos-static imos::incs-static imos::transports-static
-    imos::store_file-static imos::imos_capi-static)
+    imos::store_file-static)
 else()
   target_link_libraries(imos_consumer PRIVATE
-    imos::imos imos::incs imos::transports imos::store_file imos::imos_capi)
+    imos::imos imos::incs imos::transports imos::store_file)
 endif()

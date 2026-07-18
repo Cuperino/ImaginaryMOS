@@ -44,8 +44,7 @@ file(GLOB_RECURSE IMOS_PUBLIC_HEADERS CONFIGURE_DEPENDS
   "${PROJECT_SOURCE_DIR}/imos/include/*.h"
   "${PROJECT_SOURCE_DIR}/incs/include/*.h"
   "${PROJECT_SOURCE_DIR}/store/include/*.h"
-  "${PROJECT_SOURCE_DIR}/transports/include/*.h"
-  "${PROJECT_SOURCE_DIR}/capi/include/*.h")
+  "${PROJECT_SOURCE_DIR}/transports/include/*.h")
 
 add_custom_command(
   OUTPUT "${DOXYGEN_INDEX_FILE}"
