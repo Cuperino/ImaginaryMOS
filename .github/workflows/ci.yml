@@ -5,7 +5,8 @@
 # can't run our tests) plus lint and fixtures-freshness gates. M2 additions:
 # the linux-tls job runs the wss certificate-policy suite, and the wasm job
 # drives the WASM P0 smoke under node against a native build. Deeper suites
-# (soak, coverage upload, packaging) are added by later milestones.
+# (soak, packaging) are added by later milestones. M5 adds the coverage
+# job (the ≥90% core/ line gate + conformance-matrix artifact, plan §10).
 
 name: CI
 
@@ -139,13 +140,44 @@ jobs:
         # scratch dir comes first and the fixtures stay a read-only seed.
         run: |
           bin=build/linux-fuzz/bin
-          for f in imos_fuzz_xml_ingest imos_fuzz_deframer imos_fuzz_store_recovery imos_fuzz_ws40_url; do
+          for f in imos_fuzz_xml_ingest imos_fuzz_deframer imos_fuzz_store_recovery \
+                   imos_fuzz_ws40_url imos_fuzz_fqid imos_fuzz_object_query; do
             scratch="build/linux-fuzz/nightly-corpus/$f"
             mkdir -p "$scratch"
             seeds=""
             [ "$f" = imos_fuzz_xml_ingest ] && seeds=fixtures/spec-examples
+            [ "$f" = imos_fuzz_object_query ] && seeds="fixtures/spec-examples tests/fuzz/seeds/object_query"
             "$bin/$f" -max_total_time=900 -max_len=65536 -print_final_stats=1 "$scratch" $seeds
           done
+
+  # --- Coverage gate + conformance matrix (M5 exit criteria, plan §10) --
+  coverage:
+    name: coverage gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: lukka/get-cmake@latest
+      - name: Install gcovr
+        run: pipx install gcovr
+      - name: Configure + build + test (instrumented)
+        run: |
+          cmake --preset linux-coverage
+          cmake --build --preset linux-coverage
+          ctest --preset linux-coverage
+      - name: Enforce ≥90% line coverage on core/ (hand-written sources)
+        run: |
+          gcovr --root . --filter 'core/' --exclude '.*/gen/.*' \
+            build/linux-coverage --txt-metric line \
+            --fail-under-line 90 --print-summary
+      - name: Conformance matrix (profiles 0–7, no holes)
+        run: python3 tools/conformance_matrix.py --output conformance-matrix.json
+      - name: Upload conformance matrix artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-matrix
+          path: conformance-matrix.json
 
   # --- Lint: formatting + fixtures freshness --------------------------
   lint:

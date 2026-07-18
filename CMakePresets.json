@@ -41,7 +41,7 @@
       "name": "linux-coverage",
       "displayName": "Linux coverage",
       "inherits": "linux",
-      "cacheVariables": { "IMOS_ENABLE_COVERAGE": "ON" }
+      "cacheVariables": { "IMOS_ENABLE_COVERAGE": "ON", "IMOS_BUILD_SHARED": "OFF" }
     },
     {
       "name": "linux-tls",

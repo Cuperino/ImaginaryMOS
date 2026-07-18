@@ -53,3 +53,12 @@ imos_add_fuzzer(imos_fuzz_ws40_url
 imos_add_fuzzer(imos_fuzz_fqid
   SOURCES fuzz_fqid.cpp
   LINK imos::core-static)
+
+# Profile 3 (M5): the subset-XPath / generalSearch / mosReqObjList surface.
+# Seeded with the spec fixtures (which include the gated and illustrative
+# mosReqObjList documents) plus raw XPath expressions.
+imos_add_fuzzer(imos_fuzz_object_query
+  SOURCES fuzz_object_query.cpp
+  LINK imos::core-static
+  SEED_CORPUS "${PROJECT_SOURCE_DIR}/fixtures/spec-examples"
+              "${CMAKE_CURRENT_SOURCE_DIR}/seeds/object_query")

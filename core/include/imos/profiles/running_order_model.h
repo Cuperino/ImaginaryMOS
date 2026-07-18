@@ -38,12 +38,25 @@ enum class RoElement : std::uint8_t { RunningOrder, Story, Item };
 [[nodiscard]] IMOS_CORE_API std::optional<RoElement> roElementFromName(
     std::string_view name) noexcept;
 
+/// Apply a mosItemReplace (Profile 3, spec §3.3.2) to one RO subtree: locate
+/// the story and the item keyed by the message's <itemID>, then merge the
+/// incoming <item> — tags present in the message replace the target's in
+/// place, new tags append, present-but-empty tags remove theirs, and a
+/// <mosExternalMetadata> block replaces the first existing block with a
+/// matching <mosSchema> (else appends). The item's position is immutable —
+/// a replace never moves it. Transactional: on error nothing mutates.
+/// Shared by RunningOrderModel::apply and the NCS authoring layer's device
+/// projection.
+IMOS_CORE_API Result<void> applyMosItemReplace(codec::XmlNode& runningOrder,
+                                               const codec::Message& message);
+
 class IMOS_CORE_API RunningOrderModel {
 public:
     /// Apply one inbound construction message: roCreate, roReplace,
     /// roMetadataReplace, roDelete, roElementAction, roReadyToAir,
-    /// roElementStat (NCS-originated status, 2.8.5+), or roList (wholesale
-    /// rebuild, the resync completion path). Transactional per message.
+    /// roElementStat (NCS-originated status, 2.8.5+), roList (wholesale
+    /// rebuild, the resync completion path), or mosItemReplace (Profile 3
+    /// item-data merge, see applyMosItemReplace). Transactional per message.
     ///
     /// Decisions of record: roCreate of an existing roID is WrongState (use
     /// roReplace); roReplace and roList upsert (they carry complete state, so

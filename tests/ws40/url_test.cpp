@@ -144,3 +144,37 @@ TEST(Ws40Url, PercentEncodeDecode) {
     ASSERT_TRUE(decoded.ok());
     EXPECT_EQ(decoded.value(), "a b&c=d%");
 }
+
+// ---- Basic-auth compose/parse edges (RFC 7617 surface, plan §12) --------
+
+#include <imos/ws40/basic_auth.h>
+
+TEST(Ws40BasicAuth, ComposeParseRoundTripsAndPads) {
+    using imos::ws40::BasicCredentials;
+    using imos::ws40::composeBasicAuthorization;
+    using imos::ws40::parseBasicAuthorization;
+
+    // Round-trip across the three base64 padding shapes.
+    for (const char* password : {"p", "pw", "pw0", "pw01"}) {
+        const auto composed = composeBasicAuthorization({"user", password});
+        ASSERT_TRUE(composed.ok());
+        const auto parsed = parseBasicAuthorization(composed.value());
+        ASSERT_TRUE(parsed.ok());
+        EXPECT_EQ(parsed.value().username, "user");
+        EXPECT_EQ(parsed.value().password, password);
+    }
+    // Scheme matching is case-insensitive; surrounding spaces collapse.
+    const auto upper = parseBasicAuthorization("BASIC   dXNlcjpwdw==");
+    ASSERT_TRUE(upper.ok());
+    EXPECT_EQ(upper.value().password, "pw");
+
+    // Reject arms: ':' in the username, short/other schemes, bad base64,
+    // and credentials without the separator.
+    EXPECT_FALSE(composeBasicAuthorization({"us:er", "pw"}).ok());
+    EXPECT_FALSE(parseBasicAuthorization("").ok());
+    EXPECT_FALSE(parseBasicAuthorization("Bearer xyz").ok());
+    EXPECT_FALSE(parseBasicAuthorization("Basic").ok());
+    EXPECT_FALSE(parseBasicAuthorization("Basic abc").ok());       // not %4 length
+    EXPECT_FALSE(parseBasicAuthorization("Basic a$c=").ok());      // bad character
+    EXPECT_FALSE(parseBasicAuthorization("Basic dXNlcnB3").ok());  // no ':' inside
+}

@@ -71,6 +71,22 @@ footprint down. Only fall back to enabling libxml2 XPath if the subset
 turns out materially larger than expected; that choice must be recorded in
 this file when made.
 
+> **Decision of record (2026-07-17, implementation):** the libxml2 XPath
+> module *was* compiled in (kept ON provisionally since M0), but the
+> default held — the subset is evaluated by the **hand-rolled
+> parser/evaluator** in `core/profiles/object_query.cpp` over the retained
+> `XmlNode` DOM, and `LIBXML2_WITH_XPATH` is now **OFF**
+> (`cmake/IMOSDependencies.cmake`). Rationale: the codec's retained tree is
+> our own `XmlNode` model, so libxml2 XPath would have required
+> materializing a parallel libxml2 document per queried object, and the
+> subset (abbreviated child-axis location paths; predicates with
+> `and`/`or`/`not` and the six comparison operators; `string`/`number`/
+> `boolean`/`true`/`false`; the spec's own implicit-left-operand quirk
+> `[.>60 AND <120]`) fit in ~400 lines. The exact grammar is the doc
+> comment atop `core/include/imos/profiles/object_query.h`; evaluation
+> context (paths anchor at `<mosPayload>` of schema-matching MEM blocks)
+> is documented there too. The parser is fuzzed (`imos_fuzz_object_query`).
+
 ## 2. Current foundations
 
 - Generated views for all seven messages (`MosObjCreate`,

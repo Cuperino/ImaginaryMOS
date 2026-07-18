@@ -25,9 +25,11 @@ imos_add_library(core
     codec/gen/message_types.cpp
     encoding/encoding.cpp
     framing/deframer.cpp
+    profiles/object_query.cpp
     profiles/profile0.cpp
     profiles/profile1.cpp
     profiles/profile2.cpp
+    profiles/profile3.cpp
     profiles/profile4.cpp
     profiles/profile5.cpp
     profiles/profile6.cpp

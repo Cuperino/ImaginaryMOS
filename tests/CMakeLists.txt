@@ -8,6 +8,15 @@
 
 include(GoogleTest)
 
+# Enumerate tests at ctest time, not during the build (plan §10). The default
+# POST_BUILD mode runs each freshly-linked binary as a build step to list its
+# tests; for imos_transport_test — the one suite linking the real IXWebSocket
+# + threading stack — that startup occasionally yields an empty list under a
+# loaded CI runner, which newer CMake's JSON discovery parser rejects and
+# fails the build. PRE_TEST defers discovery to test run time, so a transient
+# listing hiccup can never break the build.
+set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
+
 add_executable(imos_smoke_test smoke/smoke_test.cpp)
 target_link_libraries(imos_smoke_test PRIVATE
   GTest::gtest_main
@@ -70,6 +79,7 @@ endif()
 add_executable(imos_profile_test
   profiles/profile1_test.cpp
   profiles/profile2_test.cpp
+  profiles/profile3_test.cpp
   profiles/profile4_test.cpp
   profiles/profile5_test.cpp
   profiles/profile6_test.cpp

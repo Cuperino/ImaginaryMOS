@@ -1182,3 +1182,250 @@ TEST(Ws40Transport, TlsSelfSignedPolicyAndPinning) {
         ASSERT_TRUE(rig.waitForConnected(Channel::Ro));
     }
 }
+
+// ---- Profile 3 over real sockets (plan §13 M5, the aux channel's debut) ----
+//
+// Three concurrently active WebSocket channels with independent in-flight
+// sequencing: an object fetch on mom, a construction commit on ro, and the
+// schema + search exchange on aux, all against one Device/Ncs pair — plus
+// the placeholder-create flow end-to-end. Grammar, paging, merge, and
+// failure branches stay in the fake-clock unit suite.
+
+namespace {
+
+/// A Profile 3 object source over the same map catalog: creates assign
+/// sequential objIDs; searches run through the library evaluator.
+class AdvancedVectorSource : public VectorObjectSource {
+public:
+    [[nodiscard]] bool supportsProfile3() const noexcept override { return true; }
+    imos::Result<std::string> createObject(
+        const imos::profiles::ObjectCreateRequest& request) override {
+        const std::string objID = "WSOBJ-" + std::to_string(nextID_++);
+        Message stored = makeMessage(MessageType::MosObj);
+        imos::codec::view::MosObj view{*stored.body()};
+        view.setObjID(objID);
+        view.setObjSlug(request.objSlug);
+        view.setObjType(request.objType);
+        view.setStatus("NEW");
+        put(objID, std::move(stored));
+        return objID;
+    }
+    imos::Result<imos::profiles::SchemaList> searchableSchemas() override {
+        return imos::profiles::SchemaList{"http://ws.example/schemas/meta1"};
+    }
+
+private:
+    int nextID_ = 1;
+};
+
+}  // namespace
+
+TEST(Ws40Transport, Profile3ThreeChannelWorkflowOverWebSocket) {
+    SystemClock clock;
+    imos::InMemoryMessageStore deviceStore;
+    imos::InMemoryMessageStore ncsStore;
+
+    ServerConfig serverConfig;
+    serverConfig.host = "127.0.0.1";  // port stays 0 → ephemeral
+    Ws40Server server{serverConfig};
+    ServerPeerConfig peer;
+    peer.mosID = kMosID;
+    peer.ncsID = kNcsID;
+    ASSERT_TRUE(server.addPeer(peer).ok());
+    ASSERT_TRUE(server.start().ok());
+    serverConfig.port = server.port();
+    incs::Ncs ncs{
+        {sessionConfig(), machineInfo(DeviceType::Ncs)},
+        PeerSession::Dependencies{&clock, &server.transportFor(kMosID, kNcsID), &ncsStore}};
+
+    ClientConfig clientConfig;
+    clientConfig.endpointUrl =
+        "ws://127.0.0.1:" + std::to_string(serverConfig.port) + "/mos/Communication";
+    clientConfig.mosID = kMosID;
+    clientConfig.ncsID = kNcsID;
+    clientConfig.channels = {Channel::Mom, Channel::Ro, Channel::Aux};
+    Ws40Client client{clientConfig, &clock};
+    imos::Device device{{sessionConfig(), machineInfo(DeviceType::Mos)},
+                        PeerSession::Dependencies{&clock, &client, &deviceStore}};
+    AdvancedVectorSource source;
+    source.put("W1", makeObject("W1", "UPDATED"));
+    device.attach(source);
+    ASSERT_TRUE(client.start().ok());
+
+    std::vector<imos::profiles::DirectoryEvent> dirEvents;
+    std::vector<imos::profiles::DirectoryQueryPage> pages;
+    const auto pump = [&] {
+        client.pump(device.session());
+        device.poll();
+        while (auto event = server.nextEvent()) {
+            switch (event->kind) {
+                case ServerEvent::Kind::ChannelConnected:
+                    ncs.onChannelConnected(event->channel);
+                    break;
+                case ServerEvent::Kind::ChannelDisconnected:
+                    ncs.onChannelDisconnected(event->channel);
+                    break;
+                case ServerEvent::Kind::Frame:
+                    ncs.onFrameReceived(event->channel, event->frame);
+                    break;
+                default:
+                    break;
+            }
+        }
+        ncs.poll();
+        while (auto directoryEvent = ncs.nextDirectoryEvent()) {
+            dirEvents.push_back(std::move(*directoryEvent));
+        }
+        while (auto page = ncs.nextQueryPage()) {
+            pages.push_back(std::move(*page));
+        }
+    };
+    const auto waitFor = [&](const std::function<bool()>& predicate) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{5000};
+        while (std::chrono::steady_clock::now() < deadline) {
+            pump();
+            if (predicate()) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        }
+        return false;
+    };
+
+    ASSERT_TRUE(waitFor([&] {
+        return client.isConnected(Channel::Mom) && client.isConnected(Channel::Ro) &&
+               client.isConnected(Channel::Aux);
+    }));
+
+    // Fire one exchange per channel before any completes: mom fetch, ro
+    // construction, aux schema request — then let all three land.
+    ASSERT_TRUE(ncs.requestObject("W1").ok());
+    ASSERT_TRUE(ncs.author().create("WS-RO3", "WS Rundown").ok());
+    ASSERT_TRUE(ncs.author().commit("WS-RO3").ok());
+    ASSERT_TRUE(ncs.requestSearchableSchemas().ok());
+
+    ASSERT_TRUE(waitFor([&] { return ncs.object("W1") != nullptr; }));
+    ASSERT_TRUE(waitFor([&] { return device.runningOrderModel().has("WS-RO3"); }));
+    ASSERT_TRUE(waitFor([&] {
+        return ncs.searchableSchemas() ==
+               std::vector<std::string>{"http://ws.example/schemas/meta1"};
+    }));
+
+    // The search family on aux: a match-all query pages the catalog back.
+    imos::profiles::ObjectQuery query;
+    query.queryID = "ws-q1";
+    ASSERT_TRUE(ncs.queryObjects(query).ok());
+    ASSERT_TRUE(waitFor([&] { return !pages.empty(); }));
+    EXPECT_EQ(pages.front().listReturnTotal, 1U);
+
+    // Placeholder create end-to-end: ACK carries the objID, the push follows.
+    ASSERT_TRUE(
+        ncs.createObject(imos::profiles::makeMosObjCreate("WS Fire", "VIDEO", "59.94")).ok());
+    ASSERT_TRUE(waitFor([&] { return ncs.object("WSOBJ-1") != nullptr; }));
+    bool sawCreated = false;
+    for (const auto& event : dirEvents) {
+        sawCreated =
+            sawCreated || (event.type == imos::profiles::DirectoryEventType::ObjectCreated &&
+                           event.objID == "WSOBJ-1");
+    }
+    EXPECT_TRUE(sawCreated);
+
+    client.stop();
+}
+
+// ---- Profile 7 over real sockets (plan §13 M4) -----------------------------
+//
+// A device-originated roReqStoryAction NEW reaches the NCS over the wire,
+// the story lands in the authoring store, the assigned storyID comes back
+// in the ack, and the ordinary Profile 2 echo converges the device's model.
+// Lease policy, capability gating, and the fixture matches stay in the
+// fake-clock unit suite.
+
+TEST(Ws40Transport, Profile7StoryActionOverWebSocket) {
+    SystemClock clock;
+    imos::InMemoryMessageStore deviceStore;
+    imos::InMemoryMessageStore ncsStore;
+
+    ServerConfig serverConfig;
+    serverConfig.host = "127.0.0.1";  // port stays 0 → ephemeral
+    Ws40Server server{serverConfig};
+    ServerPeerConfig peer;
+    peer.mosID = kMosID;
+    peer.ncsID = kNcsID;
+    ASSERT_TRUE(server.addPeer(peer).ok());
+    ASSERT_TRUE(server.start().ok());
+    serverConfig.port = server.port();
+    incs::Ncs ncs{
+        {sessionConfig(), machineInfo(DeviceType::Ncs)},
+        PeerSession::Dependencies{&clock, &server.transportFor(kMosID, kNcsID), &ncsStore}};
+
+    ClientConfig clientConfig;
+    clientConfig.endpointUrl =
+        "ws://127.0.0.1:" + std::to_string(serverConfig.port) + "/mos/Communication";
+    clientConfig.mosID = kMosID;
+    clientConfig.ncsID = kNcsID;
+    clientConfig.channels = {Channel::Ro};
+    Ws40Client client{clientConfig, &clock};
+    imos::Device device{{sessionConfig(), machineInfo(DeviceType::Mos)},
+                        PeerSession::Dependencies{&clock, &client, &deviceStore}};
+    ASSERT_TRUE(client.start().ok());
+
+    const auto pump = [&] {
+        client.pump(device.session());
+        device.poll();
+        while (auto event = server.nextEvent()) {
+            switch (event->kind) {
+                case ServerEvent::Kind::ChannelConnected:
+                    ncs.onChannelConnected(event->channel);
+                    break;
+                case ServerEvent::Kind::ChannelDisconnected:
+                    ncs.onChannelDisconnected(event->channel);
+                    break;
+                case ServerEvent::Kind::Frame:
+                    ncs.onFrameReceived(event->channel, event->frame);
+                    break;
+                default:
+                    break;
+            }
+        }
+        ncs.poll();
+    };
+    const auto waitFor = [&](const std::function<bool()>& predicate) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{5000};
+        while (std::chrono::steady_clock::now() < deadline) {
+            pump();
+            if (predicate()) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        }
+        return false;
+    };
+
+    ASSERT_TRUE(waitFor([&] { return client.isConnected(Channel::Ro); }));
+
+    ASSERT_TRUE(ncs.author().create("WS-RO7", "WS Rundown").ok());
+    ASSERT_TRUE(ncs.author().commit("WS-RO7").ok());
+    ASSERT_TRUE(waitFor([&] { return device.runningOrderModel().has("WS-RO7"); }));
+
+    imos::profiles::StoryActionRequest request{};
+    request.operation = imos::profiles::StoryAction::New;
+    request.roID = "WS-RO7";
+    request.story = incs::RunningOrderAuthor::makeStory("s7", "Wire Story");
+    ASSERT_TRUE(device.requestStoryAction(request).ok());
+
+    std::optional<imos::profiles::StoryActionResult> result;
+    ASSERT_TRUE(waitFor([&] {
+        if (!result.has_value()) {
+            result = device.nextStoryActionResult();
+        }
+        return result.has_value();
+    }));
+    EXPECT_TRUE(result->ok) << result->roStatus;
+    EXPECT_EQ(result->assignedStoryID, "s7");
+    ASSERT_TRUE(waitFor([&] {
+        return device.runningOrderModel().storyIDs("WS-RO7") == std::vector<std::string>{"s7"};
+    }));
+
+    client.stop();
+}

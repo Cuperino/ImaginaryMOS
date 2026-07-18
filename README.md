@@ -27,8 +27,8 @@ See the [implementation plan](reference/imaginarymos-implementation-plan.md) for
 the full design, and [docs/coding-standards.md](docs/coding-standards.md) for
 contribution rules.
 
-> **Status: Milestone M5 in progress — Profiles 0, 1, 2, 4, 5, 6, and 7
-> done (Profile 3, the finale, closes M5).** The sans-I/O core (codec for the
+> **Status: Milestones M0–M5 complete — Profiles 0–7 all implemented; the
+> M3–M5 arc is closed.** The sans-I/O core (codec for the
 > full v4.0 vocabulary, encoding engine, session layer, file store) and the
 > MOS 4.0 WebSocket transports — IXWebSocket client/server with Basic auth,
 > TLS, permessage-deflate, standard & passive topologies, plus the
@@ -58,8 +58,21 @@ contribution rules.
 > item references classified as Self / SameEnterprise / Foreign / NotFqid,
 > foreign ones surfaced as `ForeignObjectReferenced` events or NACKed
 > outright, FQID identity enforced at bring-up, all off by default; the
-> object transfer itself stays outside MOS, per the spec). Profile 3 is
-> next. The public API is not yet stable.
+> object transfer itself stays outside MOS, per the spec), and **Profile 3**
+> (the advanced object workflow, the first real traffic on all three
+> channels at once: `mosObjCreate`/`mosReqObjAction` placeholder create,
+> modify, and delete — the create ACK returns the new `objID` in
+> `statusDescription`, then the full `mosObj` push follows; `mosItemReplace`
+> merging device-owned item data into NCS stories position-preservingly,
+> with NACKs escalating to the resync driver; and the aux-channel search
+> family `mosReqSearchableSchema`/`mosReqObjList`/`mosObjList` with a
+> hand-rolled spec-subset XPath evaluator, `generalSearch`, deterministic
+> sort, and paging — preferred over `mosReqAll` for directory resync when
+> the peer advertises Profile 3). CI now enforces the M5 gates: ≥90% line
+> coverage on the hand-written core, 100% message-type fixture coverage,
+> and a conformance-matrix artifact with Profiles 0–7 complete on the 4.0
+> WebSocket transport. Next up: M6 legacy transports (2.8 TCP, 3.x SOAP).
+> The public API is not yet stable.
 
 ## About MOS Protocol
 

@@ -40,6 +40,7 @@ Device::Device(DeviceConfig config, PeerSession::Dependencies deps)
                 deps.clock),
       profile1_(nullptr, &session_, deps.clock),
       profile2_(&session_, deps.clock),
+      profile3_(&session_, &profile1_, &profile2_),
       profile4_(&session_, &profile2_),
       profile5_(&session_, &profile2_),
       profile7_(&session_),
@@ -59,6 +60,14 @@ Device::Device(DeviceConfig config, PeerSession::Dependencies deps)
 void Device::attach(profiles::IObjectSource& source) {
     profile1_.setSource(&source);
     profile2_.setObjectSource(&source);
+    profile3_.setSource(&source);
+    // Derive the advertisement from what is actually attached (plan §8.1):
+    // an object source means Profile 1; Profile 3 only when the source
+    // implements the advanced workflow.
+    profiles::MachineInfo info = profile0_.machineInfo();
+    info.profiles[1] = true;
+    info.profiles[3] = source.supportsProfile3();
+    profile0_.setMachineInfo(std::move(info));
 }
 
 void Device::attach(profiles::IRunningOrderSink& sink) {
@@ -172,6 +181,15 @@ std::optional<profiles::ItemCue> Device::nextItemCue() {
     return profile5_.nextItemCue();
 }
 
+Result<Seq> Device::replaceItem(std::string_view roID, std::string_view storyID,
+                                const codec::XmlNode& item) {
+    return profile3_.replaceItem(roID, storyID, item);
+}
+
+std::optional<profiles::ItemReplaceResult> Device::nextItemReplaceResult() {
+    return profile3_.nextItemReplaceResult();
+}
+
 Result<Seq> Device::requestStoryAction(const profiles::StoryActionRequest& request) {
     return profile7_.requestStoryAction(request);
 }
@@ -196,7 +214,8 @@ std::optional<SessionEvent> Device::nextEvent() {
 void Device::dispatch() {
     while (std::optional<SessionEvent> event = session_.nextEvent()) {
         if (profile0_.handle(*event) || profile1_.handle(*event) || profile2_.handle(*event) ||
-            profile4_.handle(*event) || profile5_.handle(*event) || profile7_.handle(*event)) {
+            profile3_.handle(*event) || profile4_.handle(*event) || profile5_.handle(*event) ||
+            profile7_.handle(*event)) {
             continue;
         }
         appEvents_.push_back(std::move(*event));

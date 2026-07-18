@@ -65,6 +65,7 @@ Ncs::Ncs(NcsConfig config, imos::PeerSession::Dependencies deps)
       profile7_(&author_, &defaultLeasePolicy_, &profile0_, &session_, deps.clock) {
     profile2_.setSource(&author_);           // roReq is answered from the authoring store
     profile4_.setStore(&author_.desired());  // roReqAll enumerates the same store
+    directory_.setPeerInfo(&profile0_);      // resync() reads the peer's Profile 3 flag
     author_.setProfile6(&profile6_);         // authoring-time foreign-reference rejection
     if (profile6Error_.has_value()) {
         // Defense in depth for hosts that skipped validateConfig(): run
@@ -135,6 +136,60 @@ std::vector<std::string> Ncs::objectIDs() const {
 
 std::optional<imos::profiles::DirectoryEvent> Ncs::nextDirectoryEvent() {
     return directory_.nextEvent();
+}
+
+imos::Result<imos::Seq> Ncs::createObject(imos::codec::Message mosObjCreate) {
+    imos::Result<imos::Seq> seq = directory_.createObject(std::move(mosObjCreate));
+    dispatch();
+    return seq;
+}
+
+imos::Result<imos::Seq> Ncs::requestObjAction(imos::profiles::ObjAction op,
+                                              std::string_view objID) {
+    imos::Result<imos::Seq> seq = directory_.requestObjAction(op, objID);
+    dispatch();
+    return seq;
+}
+
+imos::Result<imos::Seq> Ncs::requestObjAction(imos::profiles::ObjAction op, std::string_view objID,
+                                              imos::codec::Message message) {
+    imos::Result<imos::Seq> seq = directory_.requestObjAction(op, objID, std::move(message));
+    dispatch();
+    return seq;
+}
+
+imos::Result<imos::Seq> Ncs::requestSearchableSchemas() {
+    imos::Result<imos::Seq> seq = directory_.requestSearchableSchemas();
+    dispatch();
+    return seq;
+}
+
+const std::vector<std::string>& Ncs::searchableSchemas() const {
+    return directory_.searchableSchemas();
+}
+
+imos::Result<imos::Seq> Ncs::queryObjects(const imos::profiles::ObjectQuery& query) {
+    imos::Result<imos::Seq> seq = directory_.query(query);
+    dispatch();
+    return seq;
+}
+
+std::optional<imos::profiles::DirectoryQueryPage> Ncs::nextQueryPage() {
+    return directory_.nextQueryPage();
+}
+
+imos::Result<imos::Seq> Ncs::resyncDirectory(std::size_t pageSize) {
+    imos::Result<imos::Seq> seq = directory_.resync(pageSize);
+    dispatch();
+    return seq;
+}
+
+void Ncs::setDirectoryResyncOnMiss(bool enabled) noexcept {
+    directory_.setResyncOnMiss(enabled);
+}
+
+std::optional<ItemReplaceIngest> Ncs::nextItemReplace() {
+    return author_.nextItemReplace();
 }
 
 std::optional<imos::SessionEvent> Ncs::nextEvent() {

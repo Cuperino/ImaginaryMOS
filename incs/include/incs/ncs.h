@@ -91,8 +91,46 @@ public:
     [[nodiscard]] const imos::codec::Message* object(std::string_view objID) const;
     [[nodiscard]] std::vector<std::string> objectIDs() const;
 
-    /// Next high-level directory change (ingest/delete/miss/sync-start).
+    /// Next high-level directory change (ingest/delete/miss/sync-start,
+    /// plus the Profile 3 create/action/schema resolutions).
     [[nodiscard]] std::optional<imos::profiles::DirectoryEvent> nextDirectoryEvent();
+
+    // Profile 3: advanced object workflow (create/action on mom, search on
+    // aux, mosItemReplace ingest on ro).
+
+    /// Ask the device to create an object or placeholder (mosObjCreate; see
+    /// imos::profiles::makeMosObjCreate). The ACK resolves as an
+    /// ObjectCreated directory event carrying the new objID (read from the
+    /// ack's statusDescription); the device's follow-up mosObj push then
+    /// mirrors into the directory under that objID. A NACK resolves as
+    /// RequestFailed and leaves no directory entry.
+    imos::Result<imos::Seq> createObject(imos::codec::Message mosObjCreate);
+    /// Request an action on a MOS-owned object (mosReqObjAction). The
+    /// optional `message` carries metadata children; operation/objID
+    /// attributes are stamped here. Resolves as ObjectCreated (New) or
+    /// ActionCompleted (Update/Delete) directory events.
+    imos::Result<imos::Seq> requestObjAction(imos::profiles::ObjAction op, std::string_view objID);
+    imos::Result<imos::Seq> requestObjAction(imos::profiles::ObjAction op, std::string_view objID,
+                                             imos::codec::Message message);
+    /// Ask which schemas object metadata can be queried under (aux). The
+    /// reply resolves as a SchemasListed directory event.
+    imos::Result<imos::Seq> requestSearchableSchemas();
+    [[nodiscard]] const std::vector<std::string>& searchableSchemas() const;
+    /// Issue one search (mosReqObjList, aux). The mosObjList page ingests
+    /// into the directory and queues through nextQueryPage(); page onward by
+    /// re-issuing with the next start/end window and the same queryID.
+    imos::Result<imos::Seq> queryObjects(const imos::profiles::ObjectQuery& query);
+    [[nodiscard]] std::optional<imos::profiles::DirectoryQueryPage> nextQueryPage();
+    /// Re-mirror the peer's catalog: a paged match-all mosReqObjList when
+    /// the peer's listMachInfo advertises Profile 3 (the spec-recommended
+    /// mechanism), else Profile 1's mosReqAll.
+    imos::Result<imos::Seq> resyncDirectory(std::size_t pageSize = 0);
+    /// Run resyncDirectory() automatically when a mosReqObj is NACKed (off
+    /// by default — Profile 1 behavior just surfaces RequestFailed).
+    void setDirectoryResyncOnMiss(bool enabled) noexcept;
+    /// Device-originated mosItemReplace ingests (already merged into the
+    /// authoring store and acked), in arrival order.
+    [[nodiscard]] std::optional<ItemReplaceIngest> nextItemReplace();
 
     // Profile 2 running orders.
 

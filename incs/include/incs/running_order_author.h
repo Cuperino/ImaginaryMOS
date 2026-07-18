@@ -46,6 +46,19 @@
 
 namespace incs {
 
+/// One device-originated mosItemReplace the author ingested (Profile 3,
+/// already acked): the item's coordinates and whether the merge applied.
+/// The host observes these to re-publish downstream copies — the spec's
+/// "subsequent messages" duty (roStorySend when the RO is story-send-linked,
+/// element actions toward other playlist targets).
+struct ItemReplaceIngest {
+    std::string roID;
+    std::string storyID;
+    std::string itemID;
+    bool ok = false;
+    std::string detail;  ///< NACK reason when !ok
+};
+
 /// The resolution of one committed message: its roAck (ok or NACK with the
 /// per-element statuses), or a delivery failure after retries lapsed.
 struct CommitEvent {
@@ -177,10 +190,15 @@ public:
     imos::Result<std::vector<imos::Seq>> commitAll();
 
     /// Consume one session event; returns true when it resolved a committed
-    /// message (queues a CommitEvent). A NACK marks the device projection
-    /// unknown, so the next commit() falls back to a wholesale roReplace.
+    /// message (queues a CommitEvent) or ingested a device-originated
+    /// mosItemReplace (Profile 3: merged into the desired state *and* the
+    /// device projection — the device already holds what it sent — then
+    /// acked on ro; queues an ItemReplaceIngest). A NACK on a committed
+    /// message marks the device projection unknown, so the next commit()
+    /// falls back to a wholesale roReplace.
     bool handle(const imos::SessionEvent& event);
     [[nodiscard]] std::optional<CommitEvent> nextEvent();
+    [[nodiscard]] std::optional<ItemReplaceIngest> nextItemReplace();
 
     /// IRunningOrderSource: answer a resyncing device from the desired
     /// state; the snapshot becomes the device's projected state.
@@ -202,6 +220,7 @@ private:
     };
 
     imos::Result<void> applyEdit(const imos::codec::Message& message);
+    void ingestItemReplace(const imos::SessionEvent& event);
     /// Profile 6 authoring-time gate: the first reference Foreign to the
     /// peer device, as an InvalidArgument error (ok when not rejecting).
     imos::Result<void> rejectForeign(
@@ -214,6 +233,7 @@ private:
     std::unordered_map<std::string, DeviceRo> device_;
     std::unordered_map<imos::Seq, std::string> pending_;  ///< seq → roID
     std::deque<CommitEvent> events_;
+    std::deque<ItemReplaceIngest> itemReplaces_;
     std::map<std::string, std::map<std::string, AuthoredBody>> bodies_;  ///< roID → storyID → body
     std::set<std::string> storySendLinked_;
 };

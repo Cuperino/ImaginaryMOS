@@ -418,3 +418,180 @@ TEST(RunningOrderModel, RandomActionSequencesMatchNaiveDerivation) {
         }
     }
 }
+
+// ---- negative table: every reject arm answers with the right vocabulary ---
+//
+// ErrorCode::NotFound is the §3.3 resync trigger; structural problems must
+// stay ProtocolViolation/InvalidArgument (a plain NACK, never a resync).
+
+TEST(RunningOrderModel, ActionRejectVocabulary) {
+    RunningOrderModel model = modelWithBase();
+
+    // INSERT: no payload, payload missing its key, duplicate key in payload,
+    // key colliding with the sequence, unknown before-target.
+    Message insertEmpty = action("INSERT", "5PM");
+    setTarget(insertEmpty, "3");
+    EXPECT_EQ(model.apply(insertEmpty).error().code, ErrorCode::ProtocolViolation);
+
+    Message insertKeyless = action("INSERT", "5PM");
+    setTarget(insertKeyless, "3");
+    source(insertKeyless).appendElement("story").appendElement("storySlug").setText("x");
+    EXPECT_EQ(model.apply(insertKeyless).error().code, ErrorCode::ProtocolViolation);
+
+    Message insertDup = action("INSERT", "5PM");
+    setTarget(insertDup, "3");
+    addSourceStory(insertDup, "50");
+    addSourceStory(insertDup, "50");
+    EXPECT_EQ(model.apply(insertDup).error().code, ErrorCode::ProtocolViolation);
+
+    Message insertCollide = action("INSERT", "5PM");
+    setTarget(insertCollide, "3");
+    addSourceStory(insertCollide, "7");
+    EXPECT_EQ(model.apply(insertCollide).error().code, ErrorCode::ProtocolViolation);
+
+    Message insertBeforeGhost = action("INSERT", "5PM");
+    setTarget(insertBeforeGhost, "999");
+    addSourceStory(insertBeforeGhost, "50");
+    EXPECT_EQ(model.apply(insertBeforeGhost).error().code, ErrorCode::NotFound);
+
+    // REPLACE: no payload, no target, unknown target.
+    Message replaceEmpty = action("REPLACE", "5PM");
+    setTarget(replaceEmpty, "3");
+    EXPECT_EQ(model.apply(replaceEmpty).error().code, ErrorCode::ProtocolViolation);
+
+    Message replaceGhost = action("REPLACE", "5PM");
+    setTarget(replaceGhost, "999");
+    addSourceStory(replaceGhost, "3");
+    EXPECT_EQ(model.apply(replaceGhost).error().code, ErrorCode::NotFound);
+
+    // MOVE: no ids, duplicate ids, unknown id, unknown anchor.
+    Message moveEmpty = action("MOVE", "5PM");
+    setTarget(moveEmpty, "3");
+    EXPECT_EQ(model.apply(moveEmpty).error().code, ErrorCode::ProtocolViolation);
+
+    Message moveDup = action("MOVE", "5PM");
+    setTarget(moveDup, "3");
+    addSourceId(moveDup, "storyID", "5");
+    addSourceId(moveDup, "storyID", "5");
+    EXPECT_EQ(model.apply(moveDup).error().code, ErrorCode::ProtocolViolation);
+
+    Message moveGhost = action("MOVE", "5PM");
+    setTarget(moveGhost, "3");
+    addSourceId(moveGhost, "storyID", "999");
+    EXPECT_EQ(model.apply(moveGhost).error().code, ErrorCode::NotFound);
+
+    Message moveBadAnchor = action("MOVE", "5PM");
+    setTarget(moveBadAnchor, "999");
+    addSourceId(moveBadAnchor, "storyID", "5");
+    EXPECT_EQ(model.apply(moveBadAnchor).error().code, ErrorCode::NotFound);
+
+    // SWAP: an unknown id among the two.
+    Message swapGhost = action("SWAP", "5PM");
+    addSourceId(swapGhost, "storyID", "3");
+    addSourceId(swapGhost, "storyID", "999");
+    EXPECT_EQ(model.apply(swapGhost).error().code, ErrorCode::NotFound);
+
+    // Item level inside an unknown story.
+    Message itemGhostStory = action("INSERT", "5PM");
+    setTarget(itemGhostStory, "999", "12");
+    source(itemGhostStory).appendElement("item").appendElement("itemID").setText("77");
+    EXPECT_EQ(model.apply(itemGhostStory).error().code, ErrorCode::NotFound);
+
+    // Nothing above may have mutated the model.
+    EXPECT_EQ(model.storyIDs("5PM"), (std::vector<std::string>{"2", "3", "5", "7", "12"}));
+}
+
+TEST(RunningOrderModel, ConstructionRejectVocabulary) {
+    RunningOrderModel model = modelWithBase();
+
+    // roDelete / roReadyToAir / roMetadataReplace against an unknown RO.
+    EXPECT_EQ(model
+                  .apply(parse("<mos><mosID>a</mosID><ncsID>n</ncsID><messageID>9</messageID>"
+                               "<roDelete><roID>ghost</roID></roDelete></mos>"))
+                  .error()
+                  .code,
+              ErrorCode::NotFound);
+    EXPECT_EQ(model
+                  .apply(parse("<mos><mosID>a</mosID><ncsID>n</ncsID><messageID>9</messageID>"
+                               "<roReadyToAir><roID>ghost</roID><roAir>READY</roAir>"
+                               "</roReadyToAir></mos>"))
+                  .error()
+                  .code,
+              ErrorCode::NotFound);
+    EXPECT_EQ(model
+                  .apply(parse("<mos><mosID>a</mosID><ncsID>n</ncsID><messageID>9</messageID>"
+                               "<roMetadataReplace><roID>ghost</roID><roSlug>s</roSlug>"
+                               "</roMetadataReplace></mos>"))
+                  .error()
+                  .code,
+              ErrorCode::NotFound);
+    // A roCreate of an existing roID is WrongState (use roReplace).
+    EXPECT_EQ(model.apply(parse(kBaseRo)).error().code, ErrorCode::WrongState);
+    // A non-construction message is rejected by name.
+    EXPECT_EQ(model
+                  .apply(parse("<mos><mosID>a</mosID><ncsID>n</ncsID><messageID>9</messageID>"
+                               "<heartbeat/></mos>"))
+                  .error()
+                  .code,
+              ErrorCode::InvalidArgument);
+
+    // Query misses answer empty/nullopt, never crash.
+    EXPECT_EQ(model.runningOrder("ghost"), nullptr);
+    EXPECT_TRUE(model.storyIDs("ghost").empty());
+    EXPECT_TRUE(model.itemIDs("ghost", "2").empty());
+    EXPECT_TRUE(model.itemIDs("5PM", "ghost").empty());
+    EXPECT_EQ(model.story("5PM", "ghost"), nullptr);
+    EXPECT_EQ(model.item("5PM", "2", "ghost"), nullptr);
+    EXPECT_EQ(model.item("5PM", "ghost", "12"), nullptr);
+    EXPECT_FALSE(model.readyToAir("ghost").has_value());
+    EXPECT_FALSE(model.status(RoElement::Story, "ghost", "2", "").has_value());
+}
+
+TEST(RunningOrderModel, MosItemReplaceRejectVocabulary) {
+    RunningOrderModel model = modelWithBase();
+    const auto replaceMsg = [](const std::string& inner) {
+        return parse(
+            "<mos><mosID>a</mosID><ncsID>n</ncsID><messageID>9</messageID>"
+            "<mosItemReplace>" +
+            inner + "</mosItemReplace></mos>");
+    };
+
+    // Unknown roID / storyID / itemID are the NotFound (NACK) family.
+    EXPECT_EQ(model
+                  .apply(replaceMsg("<roID>ghost</roID><storyID>2</storyID>"
+                                    "<item><itemID>12</itemID></item>"))
+                  .error()
+                  .code,
+              ErrorCode::NotFound);
+    EXPECT_EQ(model
+                  .apply(replaceMsg("<roID>5PM</roID><storyID>ghost</storyID>"
+                                    "<item><itemID>12</itemID></item>"))
+                  .error()
+                  .code,
+              ErrorCode::NotFound);
+    EXPECT_EQ(model
+                  .apply(replaceMsg("<roID>5PM</roID><storyID>2</storyID>"
+                                    "<item><itemID>ghost</itemID></item>"))
+                  .error()
+                  .code,
+              ErrorCode::NotFound);
+    // Shape problems are structural, not resync triggers.
+    EXPECT_EQ(model.apply(replaceMsg("<roID>5PM</roID><storyID>2</storyID>")).error().code,
+              ErrorCode::ProtocolViolation);
+    EXPECT_EQ(model
+                  .apply(replaceMsg("<roID>5PM</roID><storyID>2</storyID>"
+                                    "<item><objID>M99</objID></item>"))
+                  .error()
+                  .code,
+              ErrorCode::ProtocolViolation);
+    // Direct helper misuse: not a mosItemReplace message.
+    XmlNode ro = *model.runningOrder("5PM");
+    EXPECT_EQ(imos::profiles::applyMosItemReplace(ro, parse(kBaseRo)).error().code,
+              ErrorCode::InvalidArgument);
+    // Null-value removal of a tag the target never had is a quiet no-op.
+    EXPECT_TRUE(model
+                    .apply(replaceMsg("<roID>5PM</roID><storyID>2</storyID>"
+                                      "<item><itemID>12</itemID><itemChannel/></item>"))
+                    .ok());
+    EXPECT_EQ(model.item("5PM", "2", "12")->firstChildElement("itemChannel"), nullptr);
+}

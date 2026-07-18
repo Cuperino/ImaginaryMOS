@@ -700,6 +700,11 @@ bool RunningOrderAuthor::handle(const imos::SessionEvent& event) {
     if (event.channel != imos::Channel::Ro) {
         return false;  // store seqs are per-channel; ours are all ro
     }
+    if (event.type == imos::SessionEventType::MessageReceived &&
+        event.message.type() == MessageType::MosItemReplace) {
+        ingestItemReplace(event);
+        return true;
+    }
     const auto it = pending_.find(event.seq);
     if (it == pending_.end()) {
         return false;
@@ -749,6 +754,58 @@ std::optional<CommitEvent> RunningOrderAuthor::nextEvent() {
     CommitEvent event = std::move(events_.front());
     events_.pop_front();
     return event;
+}
+
+void RunningOrderAuthor::ingestItemReplace(const imos::SessionEvent& event) {
+    ItemReplaceIngest ingest;
+    const XmlNode* body = event.message.body();
+    if (body != nullptr) {
+        ingest.roID = body->childText("roID");
+        ingest.storyID = body->childText("storyID");
+        if (const XmlNode* item = body->firstChildElement("item")) {
+            ingest.itemID = item->childText("itemID");
+        }
+    }
+
+    imos::Result<void> applied = desired_.apply(event.message);
+    ingest.ok = applied.ok();
+    std::string roStatus = "OK";
+    if (applied.ok()) {
+        // The device already holds what it sent: mirror the merge into the
+        // projection so the next commit() does not diff-revert the change.
+        if (const auto dev = device_.find(ingest.roID); dev != device_.end() && dev->second.valid) {
+            (void)imos::profiles::applyMosItemReplace(dev->second.node, event.message);
+        }
+    } else {
+        ingest.detail = applied.error().message;
+        roStatus = "NACK: " + ingest.detail;
+    }
+
+    // The spec's NACK shape names the item the message carried.
+    std::vector<imos::profiles::ElementStatus> statuses;
+    if (!applied.ok() && body != nullptr) {
+        if (const XmlNode* item = body->firstChildElement("item")) {
+            imos::profiles::ElementStatus status;
+            status.storyID = ingest.storyID;
+            status.itemID = ingest.itemID;
+            status.objID = item->childText("objID");
+            status.status = "NACK";
+            statuses.push_back(std::move(status));
+        }
+    }
+    Message ack = imos::profiles::buildRoAck(ingest.roID, roStatus, statuses);
+    imos::codec::echoMessageID(event.message, ack);
+    (void)session_->enqueueReply(imos::Channel::Ro, std::move(ack));
+    itemReplaces_.push_back(std::move(ingest));
+}
+
+std::optional<ItemReplaceIngest> RunningOrderAuthor::nextItemReplace() {
+    if (itemReplaces_.empty()) {
+        return std::nullopt;
+    }
+    ItemReplaceIngest ingest = std::move(itemReplaces_.front());
+    itemReplaces_.pop_front();
+    return ingest;
 }
 
 std::optional<Message> RunningOrderAuthor::runningOrder(std::string_view roID) {

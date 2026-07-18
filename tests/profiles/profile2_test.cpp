@@ -673,3 +673,83 @@ TEST(Profile2, NackElementStatusesReachTheCommitResult) {
     ASSERT_EQ(commits[0].statuses.size(), 2U);
     EXPECT_EQ(commits[0].statuses[1].status, "UNKNOWN");
 }
+
+// ---- raw-sink mode: the host owns RO state (plan §4.6 opt-out) ----------
+//
+// Every construction message routes to the host's IRunningOrderSink, its
+// outcome drives the roAck, and the shadow model stays untouched (the
+// resync driver is the host's problem in this mode).
+
+namespace {
+
+class RecordingRoSink : public imos::profiles::IRunningOrderSink {
+public:
+    std::vector<std::string> calls;
+    bool refuse = false;
+
+    imos::Result<void> record(const char* what) {
+        calls.emplace_back(what);
+        if (refuse) {
+            return imos::makeError(imos::ErrorCode::WrongState, "host refused");
+        }
+        return {};
+    }
+    imos::Result<void> onRoCreate(const Message&) override { return record("create"); }
+    imos::Result<void> onRoReplace(const Message&) override { return record("replace"); }
+    imos::Result<void> onRoMetadataReplace(const Message&) override { return record("metadata"); }
+    imos::Result<void> onRoDelete(const Message&) override { return record("delete"); }
+    imos::Result<void> onRoElementAction(const Message&) override { return record("action"); }
+    imos::Result<void> onRoReadyToAir(const Message&) override { return record("air"); }
+    imos::Result<void> onRoElementStat(const Message&) override { return record("stat"); }
+};
+
+}  // namespace
+
+TEST(Profile2, RawSinkModeDispatchesEveryConstructionMessage) {
+    TwoRoleFixture fx;
+    RecordingRoSink sink;
+    fx.device->attach(sink);
+    fx.connectAll();
+
+    // create → insert (action) → metadata → air → stat → delete, then a
+    // wholesale replace, each acked from the sink's outcome.
+    ASSERT_TRUE(fx.ncs->author().create("RS1", "Sink Rundown").ok());
+    ASSERT_TRUE(fx.ncs->author().commit("RS1").ok());
+    fx.settle();
+    ASSERT_TRUE(fx.ncs->author().insertStory("RS1", RunningOrderAuthor::makeStory("s1")).ok());
+    ASSERT_TRUE(fx.ncs->author().commit("RS1").ok());
+    fx.settle();
+    ASSERT_TRUE(fx.ncs->author().setHeaderField("RS1", "roSlug", "Renamed").ok());
+    ASSERT_TRUE(fx.ncs->author().commit("RS1").ok());
+    fx.settle();
+    ASSERT_TRUE(fx.ncs->author().setReadyToAir("RS1", "READY").ok());
+    ASSERT_TRUE(fx.ncs->author().commit("RS1").ok());
+    fx.settle();
+    ElementStatusReport report;
+    report.element = RoElement::Story;
+    report.roID = "RS1";
+    report.storyID = "s1";
+    report.status = "PLAY";
+    ASSERT_TRUE(fx.ncs->sendElementStat(report).ok());
+    fx.settle();
+    ASSERT_TRUE(fx.ncs->author().destroy("RS1").ok());
+    ASSERT_TRUE(fx.ncs->author().commit("RS1").ok());
+    fx.settle();
+
+    EXPECT_EQ(sink.calls,
+              (std::vector<std::string>{"create", "action", "metadata", "air", "stat", "delete"}));
+    // The shadow model never learned the RO: the sink owns state.
+    EXPECT_FALSE(fx.device->runningOrderModel().has("RS1"));
+
+    // A refusing sink turns into a NACK for the author.
+    sink.refuse = true;
+    ASSERT_TRUE(fx.ncs->author().create("RS2", "Refused").ok());
+    ASSERT_TRUE(fx.ncs->author().commit("RS2").ok());
+    fx.settle();
+    bool sawNack = false;
+    for (const incs::CommitEvent& event : drainCommits(*fx.ncs)) {
+        sawNack =
+            sawNack || (!event.ok && event.roStatus.find("host refused") != std::string::npos);
+    }
+    EXPECT_TRUE(sawNack);
+}

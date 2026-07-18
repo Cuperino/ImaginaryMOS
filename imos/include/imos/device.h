@@ -28,6 +28,7 @@
 #include <imos/profiles/profile0.h>
 #include <imos/profiles/profile1.h>
 #include <imos/profiles/profile2.h>
+#include <imos/profiles/profile3.h>
 #include <imos/profiles/profile4.h>
 #include <imos/profiles/profile5.h>
 #include <imos/profiles/profile6.h>
@@ -71,10 +72,15 @@ public:
     Device(Device&&) = delete;
     Device& operator=(Device&&) = delete;
 
-    /// Register the host's object provider for Profile 1 (mosReqObj/mosReqAll
-    /// answers and the mosReqAll snapshot). Until attached, those requests are
-    /// surfaced unhandled via nextEvent(). Profile 2 also uses it to validate
-    /// item references in construction messages (per-element roAck statuses).
+    /// Register the host's object provider for Profiles 1 and 3
+    /// (mosReqObj/mosReqAll answers, the mosReqAll snapshot, and — when the
+    /// source overrides the optional Profile 3 methods — mosObjCreate /
+    /// mosReqObjAction and the aux-channel search family). Until attached,
+    /// those requests are surfaced unhandled (P1) or NACKed (P3) via the
+    /// responders. Profile 2 also uses it to validate item references in
+    /// construction messages (per-element roAck statuses). listMachInfo's
+    /// profile flags are derived from what is actually attached: attaching
+    /// sets Profile 1, and Profile 3 per source.supportsProfile3().
     void attach(profiles::IObjectSource& source);
 
     /// Opt out of the RunningOrderModel: route construction messages to the
@@ -136,6 +142,17 @@ public:
     [[nodiscard]] std::optional<profiles::CtrlRequest> nextCtrlRequest();
     [[nodiscard]] std::optional<profiles::ItemCue> nextItemCue();
 
+    // Profile 3: replace item data this device owns inside an NCS story.
+
+    /// Send a mosItemReplace (ro channel). `item` is a verbatim <item>
+    /// subtree carrying the target <itemID>; position in the story is
+    /// immutable — a replace never moves the item. The NCS's roAck resolves
+    /// through nextItemReplaceResult(); an OK folds the change into the
+    /// shadow model, a NACK escalates the RO to the §3.3 resync driver.
+    Result<Seq> replaceItem(std::string_view roID, std::string_view storyID,
+                            const codec::XmlNode& item);
+    [[nodiscard]] std::optional<profiles::ItemReplaceResult> nextItemReplaceResult();
+
     // Profile 7: MOS story action requests.
 
     /// Request the NCS to create/update/move/delete a story (roReqStoryAction).
@@ -196,6 +213,7 @@ private:
     profiles::Profile0Responder profile0_;
     profiles::Profile1Responder profile1_;
     profiles::Profile2Responder profile2_;
+    profiles::Profile3Responder profile3_;
     profiles::Profile4Responder profile4_;
     profiles::Profile5Responder profile5_;
     profiles::Profile7Requester profile7_;

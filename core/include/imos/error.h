@@ -25,6 +25,7 @@ enum class ErrorCode : std::uint16_t {
     ProtocolViolation,  ///< message illegal in the current state or version
     WrongState,
     NotFound,
+    Unsupported,  ///< optional capability the host did not implement
     DataCorrupt,  ///< store record failed CRC or structural checks
     IoError,      ///< propagated from an injected side-effect interface
 };

@@ -211,30 +211,53 @@ bool ObjectDirectory::handle(const SessionEvent& event) {
                     return false;
             }
         case SessionEventType::AckReceived: {
-            if (event.channel != Channel::Mom) {
-                return false;  // store seqs are per-channel; ours are all mom
-            }
-            const auto it = outstanding_.find(event.seq);
+            const auto it = outstanding_.find(std::make_pair(event.channel, event.seq));
             if (it == outstanding_.end()) {
                 return false;
             }
             const Outstanding request = it->second;
             outstanding_.erase(it);
-            if (request.kind == RequestKind::Object) {
-                if (event.message.type() == codec::MessageType::MosObj) {
-                    ingest(codec::Message{event.message});  // reqObj hit
-                } else {                                    // NACK mosAck: miss
-                    pushEvent(DirectoryEvent{DirectoryEventType::RequestFailed, request.objID,
-                                             childText(event.message, "statusDescription")});
-                }
-            } else {  // mosReqAll acked; the catalog (mosListAll / paced mosObj) follows
-                pushEvent(DirectoryEvent{DirectoryEventType::SyncAcknowledged, "", ""});
+            switch (request.kind) {
+                case RequestKind::Object:
+                    if (event.message.type() == codec::MessageType::MosObj) {
+                        ingest(codec::Message{event.message});  // reqObj hit
+                    } else {                                    // NACK mosAck: miss
+                        pushEvent(DirectoryEvent{DirectoryEventType::RequestFailed, request.objID,
+                                                 childText(event.message, "statusDescription")});
+                        if (resyncOnMiss_) {
+                            (void)resync(resyncPaging_.pageSize);  // mirror presumed stale
+                        }
+                    }
+                    break;
+                case RequestKind::All:
+                    // mosReqAll acked; the catalog (mosListAll / paced mosObj) follows.
+                    pushEvent(DirectoryEvent{DirectoryEventType::SyncAcknowledged, "", ""});
+                    break;
+                case RequestKind::Create:
+                    completeCreate(event, request);
+                    break;
+                case RequestKind::Action:
+                    completeAction(event, request);
+                    break;
+                case RequestKind::Schemas:
+                    completeSchemas(event);
+                    break;
+                case RequestKind::Query:
+                    completeQuery(event, request);
+                    break;
             }
             return true;
         }
         default:
             return false;
     }
+}
+
+Result<Seq> ObjectDirectory::track(Result<Seq> seq, Channel channel, Outstanding request) {
+    if (seq.ok()) {
+        outstanding_[std::make_pair(channel, seq.value())] = std::move(request);
+    }
+    return seq;
 }
 
 void ObjectDirectory::ackPush(Channel channel, const codec::Message& received) {
@@ -263,11 +286,10 @@ Result<Seq> ObjectDirectory::requestObject(std::string_view objID) {
     if (codec::XmlNode* body = request.body()) {
         codec::view::MosReqObj{*body}.setObjID(objID);
     }
-    Result<Seq> seq = session_->enqueue(std::move(request));
-    if (seq.ok()) {
-        outstanding_[seq.value()] = Outstanding{RequestKind::Object, std::string{objID}};
-    }
-    return seq;
+    Outstanding tracked;
+    tracked.kind = RequestKind::Object;
+    tracked.objID = std::string{objID};
+    return track(session_->enqueue(std::move(request)), Channel::Mom, std::move(tracked));
 }
 
 Result<Seq> ObjectDirectory::requestAll(int pauseSeconds) {
@@ -275,11 +297,9 @@ Result<Seq> ObjectDirectory::requestAll(int pauseSeconds) {
     if (codec::XmlNode* body = request.body()) {
         codec::view::MosReqAll{*body}.setPause(std::to_string(pauseSeconds < 0 ? 0 : pauseSeconds));
     }
-    Result<Seq> seq = session_->enqueue(std::move(request));
-    if (seq.ok()) {
-        outstanding_[seq.value()] = Outstanding{RequestKind::All, {}};
-    }
-    return seq;
+    Outstanding tracked;
+    tracked.kind = RequestKind::All;
+    return track(session_->enqueue(std::move(request)), Channel::Mom, std::move(tracked));
 }
 
 const codec::Message* ObjectDirectory::object(std::string_view objID) const {

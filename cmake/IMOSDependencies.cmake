@@ -83,8 +83,12 @@ else()
   set(LIBXML2_WITH_READLINE OFF CACHE BOOL "" FORCE)
   set(LIBXML2_WITH_TLS     OFF CACHE BOOL "" FORCE)
   set(LIBXML2_WITH_XINCLUDE OFF CACHE BOOL "" FORCE)
-  # Kept ON: OUTPUT, PATTERN, PUSH, REGEXPS, SAX1, THREADS, VALID (DTD),
-  # XPATH (needed for mosReqObjList translation, plan §3.2).
+  set(LIBXML2_WITH_XPATH   OFF CACHE BOOL "" FORCE)
+  # XPATH off (decision of record, profile3-plan §1.3): mosReqObjList's
+  # subset is evaluated by the hand-rolled evaluator in
+  # core/profiles/object_query.cpp over the retained XmlNode DOM — libxml2
+  # XPath would need a parallel libxml2 document per queried object.
+  # Kept ON: OUTPUT, PATTERN, PUSH, REGEXPS, SAX1, THREADS, VALID (DTD).
   add_subdirectory("${IMOS_3RDPARTY}/libxml2" EXCLUDE_FROM_ALL)
 
   # -- IXWebSocket ------------------------------------------------------

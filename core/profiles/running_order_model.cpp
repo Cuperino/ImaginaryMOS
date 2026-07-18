@@ -235,7 +235,97 @@ std::string statusKey(RoElement element, std::string_view storyID, std::string_v
     return {};
 }
 
+/// True when the element carries neither text nor element children — the
+/// spec's "included with a null value", which removes the target's tag.
+bool isNullValue(const codec::XmlNode& node) {
+    if (!node.text().empty()) {
+        return false;
+    }
+    return std::none_of(node.children.begin(), node.children.end(), [](const codec::XmlNode& c) {
+        return c.kind == codec::XmlNodeKind::Element;
+    });
+}
+
 }  // namespace
+
+Result<void> applyMosItemReplace(codec::XmlNode& runningOrder, const codec::Message& message) {
+    const codec::XmlNode* body = message.body();
+    if (message.type() != codec::MessageType::MosItemReplace || body == nullptr) {
+        return makeError(ErrorCode::InvalidArgument, "not a mosItemReplace message");
+    }
+    const std::string storyID = body->childText("storyID");
+    const codec::XmlNode* incoming = body->firstChildElement("item");
+    if (incoming == nullptr) {
+        return makeError(ErrorCode::ProtocolViolation, "mosItemReplace carries no <item>");
+    }
+    const std::string itemID = incoming->childText("itemID");
+    if (itemID.empty()) {
+        return makeError(ErrorCode::ProtocolViolation, "mosItemReplace item is missing its itemID");
+    }
+
+    codec::XmlNode* storyNode = nullptr;
+    for (codec::XmlNode& child : runningOrder.children) {
+        if (child.isElement("story") && child.childText("storyID") == storyID) {
+            storyNode = &child;
+            break;
+        }
+    }
+    if (storyNode == nullptr) {
+        return makeError(ErrorCode::NotFound, "unknown storyID '" + storyID + "'");
+    }
+    codec::XmlNode* target = nullptr;
+    for (codec::XmlNode& child : storyNode->children) {
+        if (child.isElement("item") && child.childText("itemID") == itemID) {
+            target = &child;
+            break;
+        }
+    }
+    if (target == nullptr) {
+        // Spec §3.3.2: no action is taken and the reply is a NACK roAck.
+        return makeError(ErrorCode::NotFound, "unknown itemID '" + itemID + "'");
+    }
+
+    // Merge in place — the target item's position never changes.
+    for (const codec::XmlNode& field : incoming->children) {
+        if (field.kind != codec::XmlNodeKind::Element || field.name == "itemID") {
+            continue;
+        }
+        if (field.name == "mosExternalMetadata") {
+            const std::string schema = field.childText("mosSchema");
+            codec::XmlNode* block = nullptr;
+            for (codec::XmlNode& child : target->children) {
+                if (child.isElement("mosExternalMetadata") &&
+                    child.childText("mosSchema") == schema) {
+                    block = &child;  // first matching-schema block only
+                    break;
+                }
+            }
+            if (block != nullptr) {
+                *block = field;
+            } else {
+                target->children.push_back(field);
+            }
+            continue;
+        }
+        codec::XmlNode* existing = target->firstChildElement(field.name);
+        if (isNullValue(field)) {
+            if (existing != nullptr) {  // null value removes the tag
+                const auto at = existing - target->children.data();
+                target->children.erase(target->children.begin() + at);
+            }
+            continue;
+        }
+        if (existing != nullptr) {
+            *existing = field;  // replace in place
+        } else {
+            target->children.push_back(field);  // new tags append
+        }
+    }
+    if (!target->children.empty()) {
+        target->emptyTag = false;
+    }
+    return {};
+}
 
 std::string_view roElementName(RoElement element) noexcept {
     switch (element) {
@@ -320,6 +410,13 @@ Result<void> RunningOrderModel::apply(const codec::Message& message) {
             return applyElementAction(message);
         case codec::MessageType::RoElementStat:
             return applyElementStat(message);
+        case codec::MessageType::MosItemReplace: {
+            const auto it = orders_.find(roID);
+            if (it == orders_.end()) {
+                return makeError(ErrorCode::NotFound, "unknown roID '" + roID + "'");
+            }
+            return applyMosItemReplace(it->second.node, message);
+        }
         default:
             return makeError(
                 ErrorCode::InvalidArgument,
