@@ -13,8 +13,17 @@ option(IMOS_USE_SYSTEM_DEPS
 3rdparty submodules" OFF)
 
 # Optional/compat modules. Off at M0; scheduled by later milestones.
-option(IMOS_ENABLE_COMPAT28   "Build the MOS 2.8.x TCP transport (M6)"        OFF)
-option(IMOS_ENABLE_WS3        "Build the MOS 3.x WebService transport (M6)"   OFF)
+# Landed in M6; default ON everywhere the platform matrix supports them
+# (the EMSCRIPTEN block below hard-errors if forced on for WASM).
+if(EMSCRIPTEN)
+  set(_imos_legacy_transport_default OFF)
+else()
+  set(_imos_legacy_transport_default ON)
+endif()
+option(IMOS_ENABLE_COMPAT28   "Build the MOS 2.8.x TCP transport (M6)"
+       ${_imos_legacy_transport_default})
+option(IMOS_ENABLE_WS3        "Build the MOS 3.x WebService transport (M6)"
+       ${_imos_legacy_transport_default})
 option(IMOS_ENABLE_PLUGIN_MSGS "Build the web-control plug-in messages (deferred)" OFF)
 
 # Transport security. TLS/auth/deflate land in M2; off keeps M0 free of an

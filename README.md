@@ -67,17 +67,44 @@ contribution rules.
 > family `mosReqSearchableSchema`/`mosReqObjList`/`mosObjList` with a
 > hand-rolled spec-subset XPath evaluator, `generalSearch`, deterministic
 > sort, and paging — preferred over `mosReqAll` for directory resync when
-> the peer advertises Profile 3). CI now enforces the M5 gates: ≥90% line
+> the peer advertises Profile 3).
+> **M6 (legacy transports) is complete.** The MOS **2.8.x TCP** transport
+> (`Tcp28Endpoint`, the plan's `imos_compat28` module) implements the
+> classic port scheme — the device dials the NCS's lower port 10540
+> (`mom`), the NCS dials the device's upper port 10541 (`ro`) and query
+> port 10542 (`aux`) — over a dedicated cross-platform socket layer with
+> the resynchronizing stream deframer, UCS-2 BE (and field-observed LE)
+> wire encoding, ack-on-arrival-socket routing, discrete-socket-per-message
+> tolerance, redial with backoff, and the four-way shutdown the 2.8.5 spec
+> insists on; the thirteen messages v4.0 removed are accepted on the wire
+> and normalized onto `roElementAction`/`roElementStat` with a diagnostic.
+> The MOS **3.x WebService** transport (`Ws3Endpoint`, `imos_ws3`) pins the
+> 3.8.4 compatibility target's bindings — the WSDL embedded in the 3.8.4
+> spec (self-versioned 3.8.2) is vendored as a fixture with a fail-closed
+> extraction gate: one `MOSWebService`, SOAP 1.1 document/literal, 24
+> operations whose HTTP response *is* the ack — and maps classic messages
+> onto the typed SOAP shapes (mosHeader re-homing, per-operation hoisted
+> fields, the .NET `ArrayOfX`/`_type` containers, `listMachInfo` profile
+> flattening), hosting the service and calling the peer's over IXWebSocket
+> HTTP with parked-exchange correlation and SOAP-fault timeouts.
+> Conformance re-runs cover **every wire profile on both legacy
+> transports**: over real TCP loopback, the P1–P7 workflows including the
+> P3 three-channel walk with genuine query-port traffic and the P4
+> agency-byte gate in both UCS-2 byte orders; over live loopback HTTP, the
+> same facade-level walks ride SOAP end to end — batch sync through the
+> `ArrayOfMosObj` container, search paging through `mosList`⇄`list`,
+> placeholder create with the objID-carrying ACK — plus NACK and
+> parked-exchange fault paths. CI enforces the M5+M6 gates: ≥90% line
 > coverage on the hand-written core, 100% message-type fixture coverage,
-> and a conformance-matrix artifact with Profiles 0–7 complete on the 4.0
-> WebSocket transport. Ahead of M6, the **M7 packaging layer** has landed:
-> an exported CMake package (`find_package(ImaginaryMOS)`), pkg-config files,
+> and the conformance matrix — every wire profile complete on the 4.0
+> WebSocket, 2.8 TCP, *and* 3.x SOAP transports, the legacy thirteen
+> normalized in 2.8 mode, and the 3.8.4 bindings pinned. The **M7 packaging layer** landed earlier: an exported
+> CMake package (`find_package(ImaginaryMOS)`), pkg-config files,
 > self-contained static archives (the vendored libxml2/zlib/IXWebSocket folded
 > in, so static consumers need no `find_dependency` on them), CPack
 > tarball/`.deb`/zip bundles, and the XCFramework/AAR/wasm bundle scripts —
-> all guarded by an install-and-link consumer smoke test. Still ahead: M6
-> legacy transports (2.8 TCP, 3.x SOAP) and the rest of M7 (dialect profiles).
-> The public API is not yet stable.
+> all guarded by an install-and-link consumer smoke test. Still ahead: the
+> rest of M7 (dialect profiles). The public API is not yet stable.
 
 ## About MOS Protocol
 

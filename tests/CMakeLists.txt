@@ -58,9 +58,16 @@ target_compile_definitions(imos_core_test PRIVATE
   IMOS_FIXTURES_DIR="${PROJECT_SOURCE_DIR}/fixtures")
 gtest_discover_tests(imos_core_test DISCOVERY_TIMEOUT 30)
 
-# ---- ws40 transport integration (loopback WebSocket, plan §13 M2) -----
+# ---- transport integration (loopback sockets: ws40 M2, tcp28 M6) ------
 if(TARGET imos::transports AND NOT EMSCRIPTEN)
-  add_executable(imos_transport_test transports/ws40_transport_test.cpp)
+  set(_imos_transport_tests transports/ws40_transport_test.cpp)
+  if(IMOS_ENABLE_COMPAT28)
+    list(APPEND _imos_transport_tests transports/tcp28_transport_test.cpp)
+  endif()
+  if(IMOS_ENABLE_WS3)
+    list(APPEND _imos_transport_tests transports/ws3_transport_test.cpp)
+  endif()
+  add_executable(imos_transport_test ${_imos_transport_tests})
   target_link_libraries(imos_transport_test PRIVATE
     GTest::gtest_main
     imos::transports
@@ -70,7 +77,8 @@ if(TARGET imos::transports AND NOT EMSCRIPTEN)
     imos::warnings)
   target_compile_features(imos_transport_test PRIVATE cxx_std_20)
   target_compile_definitions(imos_transport_test PRIVATE
-    IMOS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+    IMOS_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+    IMOS_FIXTURES_DIR="${PROJECT_SOURCE_DIR}/fixtures")
   gtest_discover_tests(imos_transport_test DISCOVERY_TIMEOUT 30 PROPERTIES TIMEOUT 60)
 endif()
 

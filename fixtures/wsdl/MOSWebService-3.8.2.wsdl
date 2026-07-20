@@ -1,0 +1,3578 @@
+<!-- MOS.WSDL version 3.8.2 September 22, 2006-->
+
+  <?xml
+version="1.0" encoding="utf-8" ?> 
+
+  <wsdl:definitions
+xmlns:http="http://schemas.xmlsoap.org/wsdl/http/"
+xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+xmlns:s="http://www.w3.org/2001/XMLSchema"
+xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/" xmlns:tns="http://mosprotocol.com/webservices/"
+xmlns:tm="http://microsoft.com/wsdl/mime/textMatching/"
+xmlns:mime="http://schemas.xmlsoap.org/wsdl/mime/"
+targetNamespace="http://mosprotocol.com/webservices/"
+xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">
+
+  <wsdl:types>
+
+  <s:schema elementFormDefault="qualified"
+targetNamespace="http://mosprotocol.com/webservices/">
+
+  <s:element name="heartbeat">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="heartbeat_input"
+nillable="true" type="tns:heartbeat_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="mosHeader_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="ncsID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="messageID" type="s:int" />
+
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType name="heartbeat_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="time" nillable="true"
+type="s:string" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="heartbeatResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1" maxOccurs="1"
+name="heartbeatResult" nillable="true"
+type="tns:heartbeat_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="reqMachInfo">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="reqMachInfoResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="reqMachInfoResult" nillable="true"
+type="tns:MachInfo_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="MachInfo_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="manufacturer" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="model" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="hwRev" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="swRev" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="DOM" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="SN" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="ID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="time" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="opTime" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosRev" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosProfile0" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosProfile1" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosProfile2" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosProfile3" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosProfile4" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosProfile5" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosProfile6" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosProfile7" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="defaultActiveX"
+nillable="true" type="tns:ArrayOfActiveX_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mode" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="controlFileLocation"
+nillable="true" type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="controlSlug" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="controlName" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="controlDefaultParams"
+nillable="true" type="s:string" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="ArrayOfActiveX_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="0"
+maxOccurs="unbounded" name="ActiveX_type"
+nillable="true" type="tns:ActiveX_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="ActiveX_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="controlFileLocation"
+nillable="true" type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="controlSlug" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="controlName" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="controlDefaultParams"
+nillable="true" type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mode" nillable="true"
+type="s:string" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element name="mosObj">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1" maxOccurs="1"
+name="mosHeader_input" nillable="true"
+type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosObj_input" nillable="true"
+type="tns:mosObj_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType name="mosObj_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objSlug" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="mosAbstract" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="objGroup" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objType" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objTB" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objRev" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objDur" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="status" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objAir" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objPaths" nillable="true"
+type="tns:objPaths_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="createdBy" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="created" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="changedBy" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="changed" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="description" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosExternalMetadata"
+nillable="true" type="tns:ArrayOfMosExternalMetadata_type"
+/> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="objPaths_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objPath" nillable="true"
+type="tns:ArrayOfObjPath_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objProxyPath" nillable="true"
+type="tns:ArrayOfObjProxyPath_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="ArrayOfObjPath_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="0" maxOccurs="unbounded"
+name="objPath_type" nillable="true"
+type="tns:objPath_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="objPath_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="techDescription"
+nillable="true" type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objPath" nillable="true"
+type="s:string" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="ArrayOfObjProxyPath_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="0"
+maxOccurs="unbounded" name="objProxyPath_type"
+nillable="true" type="tns:objProxyPath_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="objProxyPath_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="techDescription" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objProxyPath" nillable="true"
+type="s:string" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="ArrayOfMosExternalMetadata_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="0" maxOccurs="unbounded"
+name="mosExternalMetadata_type" nillable="true"
+type="tns:mosExternalMetadata_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="mosExternalMetadata_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="mosScope" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosSchema" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosPayload" nillable="true"
+type="tns:ArrayOfXmlNode" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="ArrayOfXmlNode">
+
+  <s:sequence>
+
+  <s:element minOccurs="0"
+maxOccurs="unbounded" name="XmlNode"
+nillable="true">
+
+  <s:complexType mixed="true">
+
+  <s:sequence>
+
+  <s:any /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="mosObjResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosObjResult" nillable="true"
+type="tns:mosAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="mosAck_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objRev" type="s:int" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="status" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="statusDescription"
+nillable="true" type="s:string" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element name="mosReqObj">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objID" nillable="true"
+type="s:string" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="mosReqObjResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosReqObjResult"
+nillable="true" type="tns:mosObj_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosAckResult" nillable="true"
+type="tns:mosAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element name="mosReqAll">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="pause_input" type="s:int"
+/> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="mosReqAllResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosReqAllResult" nillable="true"
+type="tns:mosAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element name="mosListAll">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="mosListAll_input"
+type="tns:mosListAll_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="mosListAll_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosObj" nillable="true"
+type="tns:ArrayOfMosObj_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="ArrayOfMosObj_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="0"
+maxOccurs="unbounded" name="mosObj_type"
+nillable="true" type="tns:mosObj_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="mosListAllResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosListAllResult"
+nillable="true" type="tns:mosAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="mosObjCreate">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosObjCreate_input"
+nillable="true" type="tns:mosObjCreate_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="mosObjCreate_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objSlug" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="objGroup" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objType" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objTB" nillable="true" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="objDur" type="s:string" />
+
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="time" type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="createdBy" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="description" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosExternalMetadata"
+nillable="true" type="tns:ArrayOfMosExternalMetadata_type"
+/> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element name="mosObjCreateResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosObjCreateResult"
+nillable="true" type="tns:mosAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="mosReqObjList">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="username" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosReqObjList_input"
+nillable="true" type="tns:mosReqObjList_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="mosReqObjList_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="queryID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="changedAfter" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="changedBefore"
+nillable="true" type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="listReturnStart"
+nillable="true" type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="listReturnEnd"
+nillable="true" type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="generalSearch"
+nillable="true" type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosSchema" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="searchGroup" nillable="true"
+type="tns:searchGroup_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="searchGroup_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="searchField" nillable="true"
+type="tns:ArrayOfSearchField_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="ArrayOfSearchField_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="0"
+maxOccurs="unbounded" name="searchField_type"
+nillable="true" type="tns:searchField_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="searchField_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1" maxOccurs="1"
+name="XPath" nillable="true" type="s:string"
+/> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="mosReqObjListResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosReqObjListResult"
+nillable="true" type="tns:mosObjList_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="mosObjList_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="queryID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="listReturnStart"
+nillable="true" type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="listReturnTotal"
+nillable="true" type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="listReturnStatus"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="mosList"
+type="tns:ArrayOfMosObj_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="mosReqSearchableSchema">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="username" nillable="true"
+type="s:string" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="mosReqSearchableSchemaResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosReqSearchableSchemaResult"
+nillable="true" type="tns:mosListSearchableSchema_type"
+/> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType name="mosListSearchableSchema_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosSchema" nillable="true"
+type="s:string" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="mosReqObjAction">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosReqObjAction_input"
+nillable="true" type="tns:mosReqObjAction_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="mosReqObjAction_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="operation" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="objID" type="s:string" /> 
+
+  <s:element minOccurs="0" maxOccurs="1"
+name="objSlug" type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="mosAbstract" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="objGroup" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="objType" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="objTB" type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="objRev" type="s:string" />
+
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="objDur" type="s:string" />
+
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="createdBy" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="changedBy" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="changed" type="s:string"
+/> 
+
+  <s:element minOccurs="0" maxOccurs="1"
+name="description" type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosExternalMetadata"
+nillable="true" type="tns:ArrayOfMosExternalMetadata_type"
+/> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="mosReqObjActionResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosReqObjActionResult"
+nillable="true" type="tns:mosAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element name="roCreate">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roCreate_input"
+type="tns:roCreate_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="roCreate_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roSlug" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roChannel" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roEdStart" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roEdDur" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roTrigger" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="macroIn" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="macroOut" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosExternalMetadata"
+nillable="true" type="tns:ArrayOfMosExternalMetadata_type"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="story" nillable="true"
+type="tns:ArrayOfStory_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="ArrayOfStory_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="0"
+maxOccurs="unbounded" name="story_type"
+nillable="true" type="tns:story_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="story_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="storyID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="storySlug" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="storyNum" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosExternalMetadata"
+nillable="true" type="tns:ArrayOfMosExternalMetadata_type"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="Item" nillable="true"
+type="tns:ArrayOfItem_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="ArrayOfItem_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="0"
+maxOccurs="unbounded" name="item_type"
+nillable="true" type="tns:item_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="item_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="itemID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="itemSlug" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="mosAbstract" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objPaths" nillable="true"
+type="tns:objPaths_type" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="itemChannel" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="itemEdStart" type="s:int"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="itemEdDur" type="s:int" />
+
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="itemUserTimingDur"
+type="s:int" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="itemTrigger" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="macroIn" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="macroOut" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosExternalMetadata"
+nillable="true" type="tns:ArrayOfMosExternalMetadata_type"
+/> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="roCreateResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roCreateResult"
+nillable="true" type="tns:roAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="roAck_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roID" nillable="true" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roStatus" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="storyID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="itemID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="objID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="itemChannel" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="status" type="s:string" />
+
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element name="roReplace">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roReplace_input"
+type="tns:roReplace_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="roReplace_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roSlug" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roChannel" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roEdStart" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roEdDur" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roTrigger" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="macroIn" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="macroOut" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosExternalMetadata"
+nillable="true" type="tns:ArrayOfMosExternalMetadata_type"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="story" nillable="true"
+type="tns:ArrayOfStory_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="roReplaceResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roReplaceResult"
+nillable="true" type="tns:roAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element name="roDelete">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader" nillable="true"
+type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roID" nillable="true"
+type="s:string" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="roDeleteResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roDeleteResult"
+nillable="true" type="tns:roAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element name="roReq">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roID" nillable="true"
+type="s:string" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="roReqResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roReqResult" nillable="true"
+type="tns:roList_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roAckResult" nillable="true"
+type="tns:roAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="roList_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roSlug" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roChannel" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roEdStart" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roEdDur" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roTrigger" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="macroIn" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="macroOut" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosExternalMetadata"
+nillable="true" type="tns:ArrayOfMosExternalMetadata_type"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="story" nillable="true"
+type="tns:ArrayOfStory_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="roMetadataReplace">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roMetadataReplace_input"
+nillable="true" type="tns:roMetadataReplace_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="roMetadataReplace_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roSlug" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roChannel" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roEdStart" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roEdDur" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roTrigger" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosExternalMetadata"
+nillable="true" type="tns:ArrayOfMosExternalMetadata_type"
+/> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="roMetadataReplaceResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roMetadataReplaceResult"
+nillable="true" type="tns:roAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="roElementAction">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="operation" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roElementAction_input"
+nillable="true" type="tns:roElementAction_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="roElementAction_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="element_target_type"
+type="tns:element_target_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="element_source"
+nillable="true" type="tns:element_source_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="element_target_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="storyID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="itemID" type="s:string" />
+
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="element_source_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="story" nillable="true"
+type="tns:story_type" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="item" type="tns:item_type"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="storyID" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="itemID" type="s:string" />
+
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="roElementActionResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roElementActionResult"
+nillable="true" type="tns:roAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="roElementStat">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="element" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roElementStat_input" nillable="true"
+type="tns:roElementStat_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="roElementStat_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roID" type="s:string" /> 
+
+  <s:element minOccurs="0" maxOccurs="1"
+name="storyID" type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="itemID" type="s:string" />
+
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="objID" type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="itemChannel" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="status" type="s:string" />
+
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="time" type="s:string" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="roElementStatResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roElementStatResult"
+nillable="true" type="tns:roAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="roReadyToAir">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roAir" nillable="true"
+type="s:string" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="roReadyToAirResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roReadyToAirResult"
+nillable="true" type="tns:roAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="mosItemReplace">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="storyID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="item_input" nillable="true"
+type="tns:item_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="mosItemReplaceResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosItemReplaceResult"
+nillable="true" type="tns:roAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element name="roReqAll">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="roReqAllResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roReqAllResult"
+type="tns:ArrayOfRo_type" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roAckResult" type="tns:roAck_type"
+/> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="ArrayOfRo_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="0"
+maxOccurs="unbounded" name="ro_type"
+nillable="true" type="tns:ro_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="ro_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roSlug" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roChannel" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roEdStart" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roEdDur" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="roTrigger" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosExternalMetadata"
+nillable="true" type="tns:ArrayOfMosExternalMetadata_type"
+/> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="roStorySend">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roStorySend_input"
+nillable="true" type="tns:roStorySend_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="roStorySend_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="storyID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="storySlug" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="storyNum" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="storyBody" nillable="true"
+type="tns:storyBody_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosExternalMetadata"
+nillable="true" type="tns:ArrayOfMosExternalMetadata_type"
+/> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:complexType
+name="storyBody_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="Read1stMEMasBody"
+type="s:boolean" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="storyBody" nillable="true"
+type="s:string" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="roStorySendResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roStorySendResult"
+nillable="true" type="tns:roAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element name="roItemCue">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roItemCue_input"
+nillable="true" type="tns:roItemCue_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType
+name="roItemCue_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="storyID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="itemID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roEventType" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosExternalMetadata"
+nillable="true" type="tns:ArrayOfMosExternalMetadata_type"
+/> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="roItemCueResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roItemCueResult"
+nillable="true" type="tns:roAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element name="roCtrl">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roCtrl_input" nillable="true"
+type="tns:roCtrl_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:complexType name="roCtrl_type">
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="storyID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="itemID" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="command" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosExternalMetadata"
+nillable="true" type="tns:ArrayOfMosExternalMetadata_type"
+/> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  <s:element
+name="roCtrlResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roCtrlResult" nillable="true"
+type="tns:roAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="roReqStoryAction">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="mosHeader_input"
+nillable="true" type="tns:mosHeader_type" /> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="operation" nillable="true"
+type="s:string" /> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="leaseLock" type="s:string"
+/> 
+
+  <s:element minOccurs="0"
+maxOccurs="1" name="username" type="s:string"
+/> 
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roStorySend_input" nillable="true"
+type="tns:roStorySend_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  <s:element
+name="roReqStoryActionResponse">
+
+  <s:complexType>
+
+  <s:sequence>
+
+  <s:element minOccurs="1"
+maxOccurs="1" name="roReqStoryActionResult"
+nillable="true" type="tns:roAck_type" /> 
+
+  </s:sequence>
+
+  </s:complexType>
+
+  </s:element>
+
+  </s:schema>
+
+  </wsdl:types>
+
+  <wsdl:message
+name="heartbeatSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:heartbeat" /> 
+
+  </wsdl:message>
+
+  <wsdl:message name="heartbeatSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:heartbeatResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="reqMachInfoSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:reqMachInfo" /> 
+
+  </wsdl:message>
+
+  <wsdl:message name="reqMachInfoSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:reqMachInfoResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosObjSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:mosObj" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosObjSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:mosObjResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosReqObjSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:mosReqObj" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosReqObjSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:mosReqObjResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosReqAllSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:mosReqAll" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosReqAllSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:mosReqAllResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosListAllSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:mosListAll" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosListAllSoapOut">
+
+  <wsdl:part name="parameters" element="tns:mosListAllResponse"
+/> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosObjCreateSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:mosObjCreate" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosObjCreateSoapOut">
+
+  <wsdl:part name="parameters" element="tns:mosObjCreateResponse"
+/> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosReqObjListSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:mosReqObjList" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosReqObjListSoapOut">
+
+  <wsdl:part name="parameters" element="tns:mosReqObjListResponse"
+/> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosReqSearchableSchemaSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:mosReqSearchableSchema" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosReqSearchableSchemaSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:mosReqSearchableSchemaResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosReqObjActionSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:mosReqObjAction" /> 
+
+  </wsdl:message>
+
+  <wsdl:message name="mosReqObjActionSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:mosReqObjActionResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roCreateSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:roCreate" /> 
+
+  </wsdl:message>
+
+  <wsdl:message name="roCreateSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:roCreateResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roReplaceSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:roReplace" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roReplaceSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:roReplaceResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roDeleteSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:roDelete" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roDeleteSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:roDeleteResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roReqSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:roReq" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roReqSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:roReqResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roMetadataReplaceSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:roMetadataReplace" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roMetadataReplaceSoapOut">
+
+  <wsdl:part name="parameters" element="tns:roMetadataReplaceResponse"
+/> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roElementActionSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:roElementAction" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roElementActionSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:roElementActionResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roElementStatSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:roElementStat" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roElementStatSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:roElementStatResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roReadyToAirSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:roReadyToAir" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roReadyToAirSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:roReadyToAirResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosItemReplaceSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:mosItemReplace" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="mosItemReplaceSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:mosItemReplaceResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roReqAllSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:roReqAll" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roReqAllSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:roReqAllResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roStorySendSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:roStorySend" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roStorySendSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:roStorySendResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roItemCueSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:roItemCue" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roItemCueSoapOut">
+
+  <wsdl:part name="parameters" element="tns:roItemCueResponse"
+/> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roCtrlSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:roCtrl" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roCtrlSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:roCtrlResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roReqStoryActionSoapIn">
+
+  <wsdl:part name="parameters"
+element="tns:roReqStoryAction" /> 
+
+  </wsdl:message>
+
+  <wsdl:message
+name="roReqStoryActionSoapOut">
+
+  <wsdl:part name="parameters"
+element="tns:roReqStoryActionResponse" /> 
+
+  </wsdl:message>
+
+  <wsdl:portType
+name="MOSWebServiceSoap">
+
+  <wsdl:operation
+name="heartbeat">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">heartbeat The heartbeat
+message is designed to allow one application to confirm to another that it is
+still alive and communications between the two machines is viable. An
+application will respond to a heartbeat message with another heartbeat message.
+However, care should be taken in implementation of this message to avoid an
+endless looping condition on response.</documentation> 
+
+  <wsdl:input
+message="tns:heartbeatSoapIn" /> 
+
+  <wsdl:output
+message="tns:heartbeatSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="reqMachInfo">
+
+  <documentation xmlns="http://schemas.xmlsoap.org/wsdl/">reqMachInfo
+This message is a request for the target machine to respond with a MachInfo
+Object. Profile 0 required MOS message support</documentation> 
+
+  <wsdl:input
+message="tns:reqMachInfoSoapIn" /> 
+
+  <wsdl:output message="tns:reqMachInfoSoapOut"
+/> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosObj">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">mosObj Contains
+information that describes a unique MOS Object to the NCS. The NCS uses this
+information to search for and reference the MOS Object. Profile 1 required MOS
+message support</documentation> 
+
+  <wsdl:input
+message="tns:mosObjSoapIn" /> 
+
+  <wsdl:output
+message="tns:mosObjSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosReqObj">
+
+  <documentation xmlns="http://schemas.xmlsoap.org/wsdl/">mosReqObj
+Message used by the NCS to request the description of an object. Profile 1
+required MOS message support</documentation> 
+
+  <wsdl:input
+message="tns:mosReqObjSoapIn" /> 
+
+  <wsdl:output
+message="tns:mosReqObjSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosReqAll">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">mosReqAll Method for the
+NCS to request the MOS to send it a mosObj message for every Object in the MOS.
+Pause, when greater than zero, indicates the number of seconds to pause between
+individual mosObj messages. Pause of zero indicates that all objects will be
+sent using the mosListAll message. Profile 1 required MOS message
+support</documentation> 
+
+  <wsdl:input message="tns:mosReqAllSoapIn"
+/> 
+
+  <wsdl:output
+message="tns:mosReqAllSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosListAll">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">mosListAll Method for the
+MOS to send the NCS to MOS object descriptions in a format similar to mosObj
+messages from the MOS to the NCS. mosListAll is initiated by a properly Ack�d
+mosReqAll message from the NCS. Pause of zero indicates that all objects will
+be sent using the mosListAll message. Profile 1 required MOS message support</documentation>
+
+
+  <wsdl:input
+message="tns:mosListAllSoapIn" /> 
+
+  <wsdl:output
+message="tns:mosListAllSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosObjCreate">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">mosObjCreate Allows an NCS
+to request the Media Object Server to create a Media Object with specific
+metadata associated with it. Profile 3 required MOS message
+support</documentation> 
+
+  <wsdl:input
+message="tns:mosObjCreateSoapIn" /> 
+
+  <wsdl:output
+message="tns:mosObjCreateSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosReqObjList">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">mosReqObjList To retrieve
+only selected object descriptions from a MOS. Profile 3 required MOS message
+support</documentation> 
+
+  <wsdl:input
+message="tns:mosReqObjListSoapIn" /> 
+
+  <wsdl:output
+message="tns:mosReqObjListSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosReqSearchableSchema">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">mosReqSearchableSchema A
+mechanism for the NCS to request the MOS send a pointer to a schema in which
+searchable fields are defined by the MOS device. Profile 3 required MOS message
+support</documentation> 
+
+  <wsdl:input
+message="tns:mosReqSearchableSchemaSoapIn" /> 
+
+  <wsdl:output
+message="tns:mosReqSearchableSchemaSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosReqObjAction">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">mosReqObjAction Allows an
+NCS to request the Media Object Server to create, modify or delete a media
+object. This is a request only. A NACK response is perfectly valid and must be
+anticipated. It is possible that an ACK condition might never be returned.
+Profile 3 required MOS message support</documentation> 
+
+  <wsdl:input message="tns:mosReqObjActionSoapIn"
+/> 
+
+  <wsdl:output
+message="tns:mosReqObjActionSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roCreate">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">roCreate Message from the
+NCS to the MOS that defines a new Running Order. Profile 2 required MOS message
+support</documentation> 
+
+  <wsdl:input
+message="tns:roCreateSoapIn" /> 
+
+  <wsdl:output
+message="tns:roCreateSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roReplace">
+
+  <documentation xmlns="http://schemas.xmlsoap.org/wsdl/">roReplace
+Replaces an existing Running Order definition in the MOS with another one sent
+from the NCS. Profile 2 required MOS message support</documentation> 
+
+  <wsdl:input
+message="tns:roReplaceSoapIn" /> 
+
+  <wsdl:output message="tns:roReplaceSoapOut"
+/> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roDelete">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">roDelete Deletes a
+Running order in the MOS. Profile 2 required MOS message
+support</documentation> 
+
+  <wsdl:input
+message="tns:roDeleteSoapIn" /> 
+
+  <wsdl:output
+message="tns:roDeleteSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation name="roReq">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">roReq Request for a
+complete build of a Running Order Playlist. NOTE: This message can be used by
+either NCS or MOS. A MOS can use this to �resync� its Playlist with the NCS
+Running Order or to obtain a full description of the Playlist at any time. An
+NCS can use this as a diagnostic tool to check the order of the Playlist
+constructed in the MOS versus the sequence of Items in the Running Order.
+Profile 2 required MOS message support</documentation> 
+
+  <wsdl:input
+message="tns:roReqSoapIn" /> 
+
+  <wsdl:output
+message="tns:roReqSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roMetadataReplace">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">roMetadataReplace This
+message allows metadata associated with a running order to be replaced without
+deleting the running order and sending the entire running order again. Profile
+2 required MOS message support</documentation> 
+
+  <wsdl:input
+message="tns:roMetadataReplaceSoapIn" /> 
+
+  <wsdl:output
+message="tns:roMetadataReplaceSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roElementAction">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">roElementAction This
+command executes INSERT, REPLACE, MOVE, DELETE, and SWAP operations on one or
+more elements in a playlist. The elements can be either Stories or Items. The
+command specifies one or more source elements and a single target element. The
+source elements are those Stories or Items to be acted upon. The target element
+specifies where in the running order the actions take place. Profile 2 required
+MOS message support</documentation> 
+
+  <wsdl:input
+message="tns:roElementActionSoapIn" /> 
+
+  <wsdl:output
+message="tns:roElementActionSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roElementStat">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">roElementStat Method for
+the MOS to update the NCS on the status of any Element in a Running Order. This
+allows the NCS to reflect the status of any Elements in the MOS Running Order
+in the NCS Running Order display. Profile 2 required MOS message support with
+the element attribute set to either 'RO' or 'ITEM' Profile 4 support with
+element attribute set to 'STORY'</documentation> 
+
+  <wsdl:input
+message="tns:roElementStatSoapIn" /> 
+
+  <wsdl:output
+message="tns:roElementStatSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roReadyToAir">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">roReadyToAir The message
+allows the NCS to signal the MOS that a Running Order has been editorially
+approved ready for air. Profile 2 required MOS message
+support</documentation> 
+
+  <wsdl:input message="tns:roReadyToAirSoapIn"
+/> 
+
+  <wsdl:output
+message="tns:roReadyToAirSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosItemReplace">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">mosItemReplace This
+message allows a Media Object Server to replace an Item Reference in a Story
+with new metadata values and/or additional tags. The Story must be in a MOS
+Active PlayList. Thus, this message is in the �ro� family of messages rather
+than the �mos,� or lower port, family. However, this message is initiated by
+the media Object Server, rather than the NCS. Profile 3 required MOS message
+support</documentation> 
+
+  <wsdl:input
+message="tns:mosItemReplaceSoapIn" /> 
+
+  <wsdl:output
+message="tns:mosItemReplaceSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roReqAll">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">roReqAll Request for a
+description of all Running Orders known by a NCS from a MOS. Profile 4 required
+MOS message support</documentation> 
+
+  <wsdl:input message="tns:roReqAllSoapIn"
+/> 
+
+  <wsdl:output
+message="tns:roReqAllSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roStorySend">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">roStorySend This message
+enables sending the body of story from the NCS to a Media Object Server. Item
+references (storyItem) are embedded within the story�s text. These item
+references are not intended to be displayed on the prompter, but instead can
+optionally be used to send a message (roItemCue) to the media object server
+indicated in the embedded reference. Composed from information in the embedded
+item reference, the roItemCue message could be generated by the prompter as
+this hidden text (storyItem) scrolls past the imaginary execution/read line of
+the prompter display. Profile 4 required MOS message
+support</documentation> 
+
+  <wsdl:input
+message="tns:roStorySendSoapIn" /> 
+
+  <wsdl:output
+message="tns:roStorySendSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roItemCue">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">roItemCue Allows a
+device, such as a prompter, to send a time cue for an Item. Profile 5 required
+MOS message support</documentation> 
+
+  <wsdl:input
+message="tns:roItemCueSoapIn" /> 
+
+  <wsdl:output
+message="tns:roItemCueSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roCtrl">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">roCtrl Allow basic
+control of a media object server via simple commands such as READY, EXECUTE,
+PAUSE, STOP and SIGNAL. Profile 5 required MOS message
+support</documentation> 
+
+  <wsdl:input
+message="tns:roCtrlSoapIn" /> 
+
+  <wsdl:output
+message="tns:roCtrlSoapOut" /> 
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roReqStoryAction">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">roReqStoryAction Allows a
+MOS to request that the NCS create, modify or delete a story in the NCS. This
+is a request only. A NACK response is perfectly valid and must be anticipated.
+It is possible that an ACK condition might never be returned. Profile 7
+required MOS message support</documentation> 
+
+  <wsdl:input
+message="tns:roReqStoryActionSoapIn" /> 
+
+  <wsdl:output
+message="tns:roReqStoryActionSoapOut" /> 
+
+  </wsdl:operation>
+
+  </wsdl:portType>
+
+  <wsdl:binding
+name="MOSWebServiceSoap" type="tns:MOSWebServiceSoap">
+
+  <soap:binding
+transport="http://schemas.xmlsoap.org/soap/http"
+style="document" /> 
+
+  <wsdl:operation
+name="heartbeat">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/heartbeat"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="reqMachInfo">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/reqMachInfo"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosObj">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/mosObj"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosReqObj">
+
+  <soap:operation soapAction="http://mosprotocol.com/webservices/mosReqObj"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosReqAll">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/mosReqAll"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation name="mosListAll">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/mosListAll"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosObjCreate">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/mosObjCreate"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosReqObjList">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/mosReqObjList"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosReqSearchableSchema">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/mosReqSearchableSchema"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosReqObjAction">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/mosReqObjAction" style="document"
+/> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roCreate">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/roCreate"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roReplace">
+
+  <soap:operation soapAction="http://mosprotocol.com/webservices/roReplace"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roDelete">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/roDelete"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation name="roReq">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/roReq"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roMetadataReplace">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/roMetadataReplace"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roElementAction">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/roElementAction"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roElementStat">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/roElementStat"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roReadyToAir">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/roReadyToAir"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="mosItemReplace">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/mosItemReplace" style="document"
+/> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roReqAll">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/roReqAll"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roStorySend">
+
+  <soap:operation soapAction="http://mosprotocol.com/webservices/roStorySend"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roItemCue">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/roItemCue"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation name="roCtrl">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/roCtrl"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  <wsdl:operation
+name="roReqStoryAction">
+
+  <soap:operation
+soapAction="http://mosprotocol.com/webservices/roReqStoryAction"
+style="document" /> 
+
+  <wsdl:input>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:input>
+
+  <wsdl:output>
+
+  <soap:body use="literal" /> 
+
+  </wsdl:output>
+
+  </wsdl:operation>
+
+  </wsdl:binding>
+
+  <wsdl:service
+name="MOSWebService">
+
+  <documentation
+xmlns="http://schemas.xmlsoap.org/wsdl/">The MOS Protocol Web
+Service. Only methods that can be consumed are displayed, therefore the
+following are not displayed:listMachInfo, mosAck, mosObjectList, and
+mosListAll.</documentation> 
+
+  <wsdl:port
+name="MOSWebServiceSoap"
+binding="tns:MOSWebServiceSoap">
+
+  <soap:address
+location="http://localhost/MOSWebService3.8.3/MOSWebService.asmx"
+/> 
+
+  </wsdl:port>
+
+  </wsdl:service>
+
+  </wsdl:definitions>

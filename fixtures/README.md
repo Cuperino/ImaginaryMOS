@@ -5,15 +5,18 @@ SPDX-License-Identifier: Apache-2.0
 
 # Spec fixtures
 
-Test fixtures extracted **verbatim** from the project's local copy of the
-official specification, `reference/MOS Protocol 4.0 (Current).html` (the MOS
+Test fixtures extracted **verbatim** from the project's local copies of the
+official specifications: `reference/MOS Protocol 4.0 (Current).html` (the MOS
 Protocol v4.0.1 document published at
-<https://mosprotocol.com/wp-content/MOS-Protocol-Documents/MOSProtocolVersion40/>).
+<https://mosprotocol.com/wp-content/MOS-Protocol-Documents/MOSProtocolVersion40/>)
+and, for the M6 3.x compatibility target, `reference/MOS Protocol 3.8.4
+(Current).html`.
 
 Everything here is generated, never hand-authored. Regenerate with:
 
 ```sh
 python3 tools/extract_fixtures.py "reference/MOS Protocol 4.0 (Current).html" fixtures
+python3 tools/extract_wsdl.py "reference/MOS Protocol 3.8.4 (Current).html" fixtures
 ```
 
 ## Contents
@@ -24,6 +27,8 @@ python3 tools/extract_fixtures.py "reference/MOS Protocol 4.0 (Current).html" fi
 | `schema/mos4.xsd` | spec chapter 8 | The MOS 4.0 XSD schema. |
 | `spec-examples/*.xml` | spec chapters 3 & 5 | One file per `<mos>`-rooted example message, named by payload message type + spec section. |
 | `spec-examples/manifest.json` | generated | Catalogue: `file`, `message`, `section`, `wellformed`, and (when not well-formed) `reason`. |
+| `wsdl/MOSWebService-3.8.2.wsdl` | 3.8.4 spec chapter 8 | The MOS web-service WSDL, verbatim modulo HTML markup. Quirk of record: the 3.8.4 document ships a WSDL self-versioned **3.8.2** — that *is* the current bindings artifact (reference/m6-plan.md §2.1). |
+| `wsdl/manifest.json` | generated | Pinned bindings summary (24 operations, namespace, SOAP 1.1 document/literal) that the ws3 tests and the conformance matrix assert against. |
 
 ## Fidelity and whitespace policy
 

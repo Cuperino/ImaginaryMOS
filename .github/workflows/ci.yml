@@ -265,5 +265,6 @@ jobs:
       - name: Check fixtures are up to date with the spec
         run: |
           python3 tools/extract_fixtures.py "reference/MOS Protocol 4.0 (Current).html" fixtures
+          python3 tools/extract_wsdl.py "reference/MOS Protocol 3.8.4 (Current).html" fixtures
           git diff --exit-code -- fixtures \
-            || { echo "::error::fixtures are stale; regenerate with tools/extract_fixtures.py"; exit 1; }
+            || { echo "::error::fixtures are stale; regenerate with tools/extract_fixtures.py and tools/extract_wsdl.py"; exit 1; }

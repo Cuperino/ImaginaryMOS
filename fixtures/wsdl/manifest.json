@@ -1,0 +1,33 @@
+{
+  "source": "MOS Protocol 3.8.4 (Current).html",
+  "wsdlVersionComment": "MOS.WSDL version 3.8.2 September 22, 2006",
+  "namespace": "http://mosprotocol.com/webservices/",
+  "soap": "1.1 document/literal over http",
+  "service": "MOSWebService",
+  "operations": [
+    "heartbeat",
+    "mosItemReplace",
+    "mosListAll",
+    "mosObj",
+    "mosObjCreate",
+    "mosReqAll",
+    "mosReqObj",
+    "mosReqObjAction",
+    "mosReqObjList",
+    "mosReqSearchableSchema",
+    "reqMachInfo",
+    "roCreate",
+    "roCtrl",
+    "roDelete",
+    "roElementAction",
+    "roElementStat",
+    "roItemCue",
+    "roMetadataReplace",
+    "roReadyToAir",
+    "roReplace",
+    "roReq",
+    "roReqAll",
+    "roReqStoryAction",
+    "roStorySend"
+  ]
+}
