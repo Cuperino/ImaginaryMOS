@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Extract the MOS 4.0 DTD, XSD, and example messages from the spec HTML.
 
-Source of truth is the project's local copy of the official spec
-(reference/'MOS Protocol 4.0 (Current).html'), a calibre-exported HTML in
-which XML content is entity-escaped and wrapped in <p>/<span>/<br> markup.
+Source of truth is the official spec (reference/'MOS Protocol 4.0
+(Current).html'), a calibre-exported HTML in which XML content is
+entity-escaped and wrapped in <p>/<span>/<br> markup. The document is not
+vendored; if it is missing it is downloaded on demand by tools/fetch_spec.py
+(mosprotocol.com; TLS verification disabled + SHA-256 pin — see that module).
 
 Produces, under the output directory:
   schema/mos4.dtd          consolidated DTD (spec chapter 8)
@@ -30,6 +32,12 @@ from xml.dom import minidom
 
 SPEC = Path(sys.argv[1])
 OUT = Path(sys.argv[2])
+
+if not SPEC.exists():
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import fetch_spec
+
+    fetch_spec.ensure_path(SPEC)
 
 BLOCK_TAGS = {"p", "div", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6",
               "table", "ul", "ol", "blockquote"}

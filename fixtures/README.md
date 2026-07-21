@@ -5,12 +5,18 @@ SPDX-License-Identifier: Apache-2.0
 
 # Spec fixtures
 
-Test fixtures extracted **verbatim** from the project's local copies of the
-official specifications: `reference/MOS Protocol 4.0 (Current).html` (the MOS
-Protocol v4.0.1 document published at
+Test fixtures extracted **verbatim** from the official specifications: `MOS
+Protocol 4.0 (Current).html` (the MOS Protocol v4.0.1 document published at
 <https://mosprotocol.com/wp-content/MOS-Protocol-Documents/MOSProtocolVersion40/>)
-and, for the M6 3.x compatibility target, `reference/MOS Protocol 3.8.4
-(Current).html`.
+and, for the M6 3.x compatibility target, `MOS Protocol 3.8.4 (Current).html`.
+
+Those spec HTML documents are **not vendored** in the repository. They are
+downloaded on demand by [`tools/fetch_spec.py`](../tools/fetch_spec.py) into
+`reference/` (gitignored) — the extraction scripts below call it automatically
+when the file is missing, or fetch them explicitly with
+`python3 tools/fetch_spec.py all`. mosprotocol.com serves a broken TLS chain,
+so the fetch disables certificate verification and pins each document by
+SHA-256 instead.
 
 Everything here is generated, never hand-authored. Regenerate with:
 

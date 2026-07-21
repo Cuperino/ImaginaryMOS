@@ -26,86 +26,6 @@ See the [implementation plan](reference/imaginarymos-implementation-plan.md) for
 the full design, and [docs/coding-standards.md](docs/coding-standards.md) for
 contribution rules.
 
-> **Status: Milestones M0–M5 complete — Profiles 0–7 all implemented; the
-> M3–M5 arc is closed.** The sans-I/O core (codec for the
-> full v4.0 vocabulary, encoding engine, session layer, file store) and the
-> MOS 4.0 WebSocket transports — IXWebSocket client/server with Basic auth,
-> TLS, permessage-deflate, standard & passive topologies, plus the
-> WebAssembly client — are implemented and tested, including Profile 0
-> end-to-end in both roles. The `imos::Device` and `incs::Ncs` role facades
-> compose the session with **Profile 1** (unsolicited `mosObj` push,
-> single-object fetch, full-catalog sync in batch and paced modes),
-> **Profile 2** (the roConstruction family into a transactional
-> `RunningOrderModel` with the spec's resync-on-unknown-ID heuristic on the
-> device side; a running-order authoring/diff API emitting minimal
-> `roElementAction` sequences on the NCS side; bidirectional
-> `roElementStat`), **Profile 4** (RO enumeration `roReqAll`/`roListAll`
-> with cold-start hydration into the shadow model; `roStorySend` story
-> bodies resolved through hand-written mixed-content helpers, delivered to a
-> host story sink with byte-verbatim `Read1stMEMasBody` agency payloads such
-> as NewsML; story authoring and `sendStory` on the NCS side, with the
-> MOVE-not-DELETE+INSERT rule mandatory for story-send-linked running
-> orders), **Profile 5** (`roCtrl` READY/EXECUTE/PAUSE/STOP/SIGNAL resolved
-> at running-order, story, or item scope into a host control sink, with
-> unknown targets escalating to the Profile 2 resync driver; `roItemCue`
-> timed notifications in both directions, including prompter origination
-> addressed to the item's parent MOS), **Profile 7** (`roReqStoryAction`:
-> the device requests story NEW/UPDATE/MOVE/DELETE on the NCS under a
-> time-bounded lease and converges through the ordinary Profile 2/4 echo,
-> never self-applying), and **Profile 6** (MOS Redirection: Fully Qualified
-> MOS ID parse/compose/classify utilities and opt-in enforcement — ingested
-> item references classified as Self / SameEnterprise / Foreign / NotFqid,
-> foreign ones surfaced as `ForeignObjectReferenced` events or NACKed
-> outright, FQID identity enforced at bring-up, all off by default; the
-> object transfer itself stays outside MOS, per the spec), and **Profile 3**
-> (the advanced object workflow, the first real traffic on all three
-> channels at once: `mosObjCreate`/`mosReqObjAction` placeholder create,
-> modify, and delete — the create ACK returns the new `objID` in
-> `statusDescription`, then the full `mosObj` push follows; `mosItemReplace`
-> merging device-owned item data into NCS stories position-preservingly,
-> with NACKs escalating to the resync driver; and the aux-channel search
-> family `mosReqSearchableSchema`/`mosReqObjList`/`mosObjList` with a
-> hand-rolled spec-subset XPath evaluator, `generalSearch`, deterministic
-> sort, and paging — preferred over `mosReqAll` for directory resync when
-> the peer advertises Profile 3).
-> **M6 (legacy transports) is complete.** The MOS **2.8.x TCP** transport
-> (`Tcp28Endpoint`, the plan's `imos_compat28` module) implements the
-> classic port scheme — the device dials the NCS's lower port 10540
-> (`mom`), the NCS dials the device's upper port 10541 (`ro`) and query
-> port 10542 (`aux`) — over a dedicated cross-platform socket layer with
-> the resynchronizing stream deframer, UCS-2 BE (and field-observed LE)
-> wire encoding, ack-on-arrival-socket routing, discrete-socket-per-message
-> tolerance, redial with backoff, and the four-way shutdown the 2.8.5 spec
-> insists on; the thirteen messages v4.0 removed are accepted on the wire
-> and normalized onto `roElementAction`/`roElementStat` with a diagnostic.
-> The MOS **3.x WebService** transport (`Ws3Endpoint`, `imos_ws3`) pins the
-> 3.8.4 compatibility target's bindings — the WSDL embedded in the 3.8.4
-> spec (self-versioned 3.8.2) is vendored as a fixture with a fail-closed
-> extraction gate: one `MOSWebService`, SOAP 1.1 document/literal, 24
-> operations whose HTTP response *is* the ack — and maps classic messages
-> onto the typed SOAP shapes (mosHeader re-homing, per-operation hoisted
-> fields, the .NET `ArrayOfX`/`_type` containers, `listMachInfo` profile
-> flattening), hosting the service and calling the peer's over IXWebSocket
-> HTTP with parked-exchange correlation and SOAP-fault timeouts.
-> Conformance re-runs cover **every wire profile on both legacy
-> transports**: over real TCP loopback, the P1–P7 workflows including the
-> P3 three-channel walk with genuine query-port traffic and the P4
-> agency-byte gate in both UCS-2 byte orders; over live loopback HTTP, the
-> same facade-level walks ride SOAP end to end — batch sync through the
-> `ArrayOfMosObj` container, search paging through `mosList`⇄`list`,
-> placeholder create with the objID-carrying ACK — plus NACK and
-> parked-exchange fault paths. CI enforces the M5+M6 gates: ≥90% line
-> coverage on the hand-written core, 100% message-type fixture coverage,
-> and the conformance matrix — every wire profile complete on the 4.0
-> WebSocket, 2.8 TCP, *and* 3.x SOAP transports, the legacy thirteen
-> normalized in 2.8 mode, and the 3.8.4 bindings pinned. The **M7 packaging layer** landed earlier: an exported
-> CMake package (`find_package(ImaginaryMOS)`), pkg-config files,
-> self-contained static archives (the vendored libxml2/zlib/IXWebSocket folded
-> in, so static consumers need no `find_dependency` on them), CPack
-> tarball/`.deb`/zip bundles, and the XCFramework/AAR/wasm bundle scripts —
-> all guarded by an install-and-link consumer smoke test. Still ahead: the
-> rest of M7 (dialect profiles). The public API is not yet stable.
-
 ## About MOS Protocol
 
 [Media Object Server Communications Protocol (MOS)](https://mosprotocol.com/):
@@ -199,10 +119,11 @@ Needs `doxygen` (and `graphviz`/`dot` for diagrams). See
 
 ## Spec fixtures
 
-The MOS 4.0 DTD, XSD, and every example message are extracted from the project's
-copy of the official specification into [`fixtures/`](fixtures/README.md). The
-`imos-fixtures-verify` tool (also a CTest gate) checks them with libxml2.
-Regenerate with:
+The MOS 4.0 DTD, XSD, and every example message are extracted from the official
+specification into [`fixtures/`](fixtures/README.md). The
+`imos-fixtures-verify` tool (also a CTest gate) checks them with libxml2. The
+spec HTML is not vendored — it is downloaded on demand by `tools/fetch_spec.py`
+(see [`fixtures/README.md`](fixtures/README.md)). Regenerate with:
 
 ```sh
 python3 tools/extract_fixtures.py "reference/MOS Protocol 4.0 (Current).html" fixtures

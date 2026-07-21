@@ -25,8 +25,10 @@ archives (vendored libxml2/zlib/IXWebSocket folded in via
 tarball/`.deb`/zip, and the `packaging/` XCFramework/AAR/wasm bundle scripts,
 gated by the `Packaging.ConsumerSmoke` install-and-link ctest (`*-package`
 presets). **M6 (legacy transports) is done** — design of record
-`reference/m6-plan.md`; spec copies for 2.8.5 and 3.8.4 now sit in
-`reference/` (same broken-TLS rule: local HTML is the source of truth).
+`reference/m6-plan.md`; the 2.8.5 and 3.8.4 spec HTML (like the 4.0 copy) is
+fetched on demand into `reference/` by `tools/fetch_spec.py` rather than
+vendored (see the Fixtures section — broken TLS, so verification-off + SHA-256
+pin; the fetched HTML is the source of truth).
 **Remaining: the rest of M7 (dialect profiles). The C ABI is out of scope —
 dropped by decision: every intended consumer embeds the C++ libraries
 directly (native C++, Flutter over C++, Rust via CXX, Node via a C++
@@ -243,9 +245,14 @@ smoke test). No NDK/Xcode here, so android/ios presets are CI-only.
 
 ## Fixtures (`fixtures/`)
 
-Generated from the local spec HTML by `tools/extract_fixtures.py`, never
-hand-edited. mosprotocol.com serves a broken TLS chain — do not try to fetch
-schemas from it; the local `reference/*.html` is the source of truth.
+Generated from the spec HTML by `tools/extract_fixtures.py`, never
+hand-edited. The spec HTML documents (4.0/3.8.4/2.8.5) are **not vendored** —
+`tools/fetch_spec.py` downloads them into `reference/` on demand (the
+extract scripts call it automatically when the file is missing), and they are
+gitignored. mosprotocol.com serves a broken TLS chain, so that fetch disables
+certificate verification and pins each document by SHA-256 instead. The spec
+HTML remains the source of truth; the DTD/XSD are embedded in it — don't fetch
+schema files separately.
 
 - `schema/mos4.dtd` (DTD, with **documented errata** for spec typos like
   `<!ELEMENT keepalive>` — see the file header) and `schema/mos4.xsd`.

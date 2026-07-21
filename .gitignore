@@ -82,3 +82,9 @@ CMakeLists.txt.user*
 .uic/
 /build*/
 /.qtcreator/
+
+# Official MOS spec HTML documents — not vendored; fetched on demand by
+# tools/fetch_spec.py (and the extract_*.py scripts). See fixtures/README.md.
+/reference/MOS Protocol 4.0 (Current).html
+/reference/MOS Protocol 3.8.4 (Current).html
+/reference/MOS Protocol 2.8.5 (Final).html

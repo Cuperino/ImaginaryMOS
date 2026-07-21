@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Extract the MOS 3.x web-service WSDL from the 3.8.4 spec HTML.
 
-Source of truth is the project's local copy of the official spec
-(reference/'MOS Protocol 3.8.4 (Current).html'); mosprotocol.com serves a
-broken TLS chain, so the vendored HTML is authoritative (same rule as the
-4.0 fixtures). The full WSDL is embedded in the spec's chapter 8 — note the
+Source of truth is the official spec (reference/'MOS Protocol 3.8.4
+(Current).html'). The document is not vendored; if it is missing it is
+downloaded on demand by tools/fetch_spec.py. mosprotocol.com serves a broken
+TLS chain, so that fetch disables certificate verification and pins the
+document by SHA-256 instead (same rule as the 4.0 fixtures). The full WSDL is
+embedded in the spec's chapter 8 — note the
 quirk of record (reference/m6-plan.md §2.1): the 3.8.4 document ships a WSDL
 whose own comment says "MOS.WSDL version 3.8.2 September 22, 2006"; 3.8.2
 *is* the current bindings artifact for the 3.8.4 compatibility target.
@@ -32,6 +34,12 @@ from pathlib import Path
 
 SPEC = Path(sys.argv[1])
 OUT = Path(sys.argv[2])
+
+if not SPEC.exists():
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import fetch_spec
+
+    fetch_spec.ensure_path(SPEC)
 
 WSDL_NS = "http://schemas.xmlsoap.org/wsdl/"
 SOAP_NS = "http://schemas.xmlsoap.org/wsdl/soap/"

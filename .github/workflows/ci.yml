@@ -263,6 +263,8 @@ jobs:
           git diff --exit-code -- core \
             || { echo "::error::generated code is stale; rerun tools/codegen/gen_messages.py"; exit 1; }
       - name: Check fixtures are up to date with the spec
+        # The spec HTML is not vendored; the extract scripts download it on
+        # demand via tools/fetch_spec.py (needs network to mosprotocol.com).
         run: |
           python3 tools/extract_fixtures.py "reference/MOS Protocol 4.0 (Current).html" fixtures
           python3 tools/extract_wsdl.py "reference/MOS Protocol 3.8.4 (Current).html" fixtures
