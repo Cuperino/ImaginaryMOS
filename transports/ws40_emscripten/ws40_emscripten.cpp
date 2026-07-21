@@ -11,6 +11,7 @@
 #include <string>
 
 #include <emscripten/websocket.h>
+#include <pthread.h>
 
 #include <imos/ws40/url.h>
 
@@ -49,12 +50,37 @@ struct Ws40EmscriptenClient::Impl {
         bool downReported = false;
     };
     std::array<ChannelSlot, kChannelCount> slots;
-    // Single-threaded by design: browser WebSocket callbacks arrive on the
-    // main thread between event-loop turns, never concurrently with pump().
+    // Single-strand by design (see the header's owning-thread contract):
+    // callbacks are registered with Emscripten's calling-thread context, so
+    // they are delivered on the thread that called start()/pump() — never
+    // concurrently with pump(). No locking is needed.
     std::deque<QueuedEvent> queue;
     bool started = false;
+    pthread_t owningThread{};      ///< the thread that called start()
+    bool crossThreadReported = false;
 
     ChannelSlot& slot(Channel channel) { return slots[static_cast<std::size_t>(channel)]; }
+
+    /// Owning-thread misuse guard: diagnose (once) calls from a thread other
+    /// than the one that started the transport — the callbacks would be
+    /// delivered to the wrong thread and the single-strand model broken.
+    void checkOwningThread(const char* operation) {
+        if (!started || pthread_equal(owningThread, pthread_self()) != 0) {
+            return;
+        }
+        if (crossThreadReported) {
+            return;
+        }
+        crossThreadReported = true;
+        const std::string diagnostic =
+            std::string{"ws40_emscripten: "} + operation +
+            " called from a thread other than the one that called start(); the transport "
+            "is single-strand — one thread must own start/pump/send/stop";
+        log(LogLevel::Error, diagnostic);
+        if (errorHandler) {
+            errorHandler(Channel::Mom, diagnostic);
+        }
+    }
 
     void log(LogLevel level, const std::string& text) {
         if (logger != nullptr) {
@@ -192,6 +218,11 @@ Result<void> Ws40EmscriptenClient::start() {
             return connected;
         }
     }
+    // The calling thread becomes the owning thread: callbacks were just
+    // registered with the calling-thread context, so every later call must
+    // come from this thread (see the header's owning-thread contract).
+    impl_->owningThread = pthread_self();
+    impl_->crossThreadReported = false;
     impl_->started = true;
     return {};
 }
@@ -204,6 +235,7 @@ void Ws40EmscriptenClient::stop() {
 }
 
 Result<void> Ws40EmscriptenClient::send(Channel channel, std::span<const std::uint8_t> frame) {
+    impl_->checkOwningThread("send()");
     Impl::ChannelSlot& slot = impl_->slot(channel);
     if (slot.socket == 0 || !slot.open) {
         return makeError(
@@ -231,6 +263,7 @@ bool Ws40EmscriptenClient::isConnected(Channel channel) const {
 }
 
 void Ws40EmscriptenClient::pump(PeerSession& session) {
+    impl_->checkOwningThread("pump()");
     std::deque<QueuedEvent> local;
     local.swap(impl_->queue);
     for (QueuedEvent& event : local) {

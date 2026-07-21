@@ -146,6 +146,16 @@
         "IMOS_BUILD_SHARED": "OFF",
         "IMOS_BUILD_TESTS": "OFF"
       }
+    },
+    {
+      "name": "wasm-mt",
+      "displayName": "WebAssembly multithreaded (Emscripten, -pthread; worker-pthread transport ownership)",
+      "inherits": "wasm",
+      "cacheVariables": {
+        "CMAKE_C_FLAGS": "-pthread",
+        "CMAKE_CXX_FLAGS": "-pthread",
+        "CMAKE_EXE_LINKER_FLAGS": "-pthread -sPTHREAD_POOL_SIZE=4"
+      }
     }
   ],
   "buildPresets": [
@@ -163,7 +173,8 @@
     { "name": "windows-package", "configurePreset": "windows-package" },
     { "name": "android", "configurePreset": "android" },
     { "name": "ios", "configurePreset": "ios" },
-    { "name": "wasm", "configurePreset": "wasm" }
+    { "name": "wasm", "configurePreset": "wasm" },
+    { "name": "wasm-mt", "configurePreset": "wasm-mt" }
   ],
   "testPresets": [
     {

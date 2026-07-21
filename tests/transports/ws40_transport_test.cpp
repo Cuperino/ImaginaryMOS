@@ -977,6 +977,13 @@ std::string wasmSmokeJsPath() {
     return std::string{IMOS_SOURCE_DIR} + "/build/wasm/bin/imos-ws40-wasm-smoke.js";
 }
 
+std::string wasmMtSmokeJsPath() {
+    if (const char* env = std::getenv("IMOS_WASM_SMOKE_MT_JS")) {
+        return env;
+    }
+    return std::string{IMOS_SOURCE_DIR} + "/build/wasm-mt/bin/imos-ws40-wasm-smoke.js";
+}
+
 std::string nodeBinary() {
     if (const char* env = std::getenv("IMOS_NODE")) {
         return env;
@@ -1044,6 +1051,55 @@ TEST(Ws40Transport, WasmClientProfile0Smoke) {
 
     runner.join();
     EXPECT_EQ(nodeExit.load(), 0) << "wasm client did not exit cleanly";
+}
+
+// Same workflow, but the transport is owned end to end by a worker pthread
+// inside the WASM module (the "thread" argument; wasm-mt preset) —
+// exercising the owning-thread contract a host like a Qt worker thread
+// relies on. Requires a SharedArrayBuffer-capable node (any modern one).
+TEST(Ws40Transport, WasmClientProfile0SmokeThreaded) {
+    const bool required = std::getenv("IMOS_REQUIRE_WASM_SMOKE_MT") != nullptr;
+    const std::string js = wasmMtSmokeJsPath();
+    if (!std::filesystem::exists(js)) {
+        ASSERT_FALSE(required) << "wasm-mt smoke client missing at " << js;
+        GTEST_SKIP() << "wasm-mt smoke client not built (expected " << js
+                     << "); build the wasm-mt preset first";
+    }
+    const std::string node = nodeBinary();
+    const bool nodeRuns = std::system((node + " --version >/dev/null 2>&1").c_str()) == 0;
+    if (!nodeRuns) {
+        ASSERT_FALSE(required) << "no usable node (tried " << node << ")";
+        GTEST_SKIP() << "node not available (set IMOS_NODE or EMSDK)";
+    }
+    const std::string wsFlag =
+        std::system((node + " --experimental-websocket -e 0 >/dev/null 2>&1").c_str()) == 0
+            ? " --experimental-websocket"
+            : "";
+
+    Rig rig;
+    rig.startServer();
+
+    std::atomic<int> nodeExit{-1};
+    std::thread runner{[&] {
+        const std::string command = node + wsFlag + " " + js + " " +
+                                    std::to_string(rig.port) + " thread >/dev/null 2>&1";
+        nodeExit = std::system(command.c_str());
+    }};
+
+    imos::ITransport& toDevice = rig.server->transportFor(kMosID, kNcsID);
+    ASSERT_TRUE(rig.waitFor([&] { return toDevice.isConnected(Channel::Ro); }, 15000));
+    ASSERT_TRUE(rig.ncsSession->enqueue(Channel::Ro, makeReqMachInfo()).ok());
+    ASSERT_TRUE(rig.waitFor(
+        [&] { return findAck(rig.ncsEvents, MessageType::ListMachInfo) != nullptr; }, 15000));
+
+    const SessionEvent* ack = findAck(rig.ncsEvents, MessageType::ListMachInfo);
+    const auto info = parseListMachInfo(ack->message);
+    ASSERT_TRUE(info.ok());
+    EXPECT_EQ(info.value().info.model, "WASM-1");
+    EXPECT_EQ(info.value().info.deviceType, DeviceType::Mos);
+
+    runner.join();
+    EXPECT_EQ(nodeExit.load(), 0) << "threaded wasm client did not exit cleanly";
 }
 
 // ---- TLS (wss) ------------------------------------------------------------

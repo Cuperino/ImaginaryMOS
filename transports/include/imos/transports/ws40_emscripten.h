@@ -8,13 +8,25 @@
 // party originates back down them, so a browser-hosted imos device is fully
 // functional in passive mode.
 //
-// Browser realities (documented limitations, not bugs): callbacks arrive on
-// the main browser thread between turns of the event loop (the sans-I/O
-// single-strand model absorbs this; no locking is used or needed);
-// request headers cannot be set, so HTTP Basic auth is unavailable —
-// start() fails if ClientConfig.auth is set; TLS trust decisions belong to
-// the browser (ClientConfig.tls is ignored), and wss:// is mandatory from
-// secure pages.
+// Threading contract — the *owning thread* model: the thread that calls
+// start() owns the transport. That same thread must make every subsequent
+// call (pump()/send()/stop()) and is where the WebSocket callbacks are
+// delivered (they are registered with Emscripten's calling-thread context).
+// In a single-threaded build the owning thread is the main browser thread —
+// callbacks arrive between turns of the event loop. In a multithreaded
+// (-pthread) build a dedicated worker pthread may own the transport instead:
+// the underlying JS WebSocket object lives on the main thread
+// (createOnMainThread), so socket operations proxy to it — the main thread
+// must stay responsive or those calls stall — and callbacks proxy back to
+// the owning pthread, which must service Emscripten's queued calls (any
+// event loop or futex-based wait does; a busy-spinning thread does not).
+// The sans-I/O single-strand model absorbs all of this; no locking is used
+// or needed. Cross-thread misuse is reported once through the error handler.
+//
+// Browser realities (documented limitations, not bugs): request headers
+// cannot be set, so HTTP Basic auth is unavailable — start() fails if
+// ClientConfig.auth is set; TLS trust decisions belong to the browser
+// (ClientConfig.tls is ignored), and wss:// is mandatory from secure pages.
 
 #pragma once
 
