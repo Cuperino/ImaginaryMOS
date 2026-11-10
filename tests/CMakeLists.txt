@@ -90,7 +90,8 @@ add_executable(imos_profile_test
   profiles/profile4_test.cpp
   profiles/profile5_test.cpp
   profiles/profile6_test.cpp
-  profiles/profile7_test.cpp)
+  profiles/profile7_test.cpp
+  profiles/spec_regression_test.cpp)
 target_link_libraries(imos_profile_test PRIVATE
   GTest::gtest_main
   imos::core
