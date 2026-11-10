@@ -4,8 +4,10 @@
 // Spec §6 time field formatting. Times look like "2009-04-11T17:20:42" with
 // optional fractional seconds and optional zone; M1 emits the plain UTC
 // form, and parsing (M4, Profile 5's roEventTime) tolerates the dialect
-// variants: fractional seconds of any precision, an optional 'Z', an
-// optional ±hh[:mm] offset, and zone-less times (read as UTC).
+// variants: fractional seconds of any precision after either separator the
+// spec itself uses (§6 defines ",ddd"; its roItemCue examples write ".00"),
+// an optional 'Z', an optional ±hh[:mm] offset, and zone-less times (read
+// as UTC).
 
 #pragma once
 

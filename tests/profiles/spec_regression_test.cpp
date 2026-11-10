@@ -4,8 +4,7 @@
 // Spec-review regressions. Each test pins one defect found by reviewing the
 // implementation against the MOS 4.0 specification text, reproduced with a
 // real imos::Device against a real incs::Ncs over the loopback pair; every
-// test names the spec clause it asserts. Item 6 (the time format) is not
-// fixed yet and is EXPECTED TO FAIL until it is.
+// test names the spec clause it asserts.
 //
 //   1. A late/duplicate ack must not enter the inbound dedupe window
 //      (spec §4.1.6: only peer *requests* with identical messageIDs are
@@ -265,8 +264,10 @@ TEST(SpecRegression, RoMetadataReplaceMergesInsteadOfDroppingAbsentTags) {
 }
 
 // 6. Spec §6 time format: YYYY-MM-DD'T'hh:mm:ss[,ddd]['Z'] — the fraction
-//    separator is a comma. Both of the spec's own examples must parse.
-//    (core/session/time_format.cpp, parseSpecTime: only '.' is accepted.)
+//    separator is a comma, and both of the field definition's examples must
+//    parse. The spec is not consistent, though: its roItemCue examples carry
+//    <roEventTime>2000-03-20T10:45:00.00</roEventTime>, so the dot form (at
+//    any precision) has to keep parsing too, to the same instant.
 TEST(SpecRegression, SpecTimeAcceptsCommaFractions) {
     const auto whole = imos::parseSpecTime("2009-04-11T14:22:07Z");
     ASSERT_TRUE(whole.ok());
@@ -279,6 +280,30 @@ TEST(SpecRegression, SpecTimeAcceptsCommaFractions) {
     ASSERT_TRUE(offset.ok()) << "spec example 2009-04-11T14:22:07,125-05:00 rejected";
     EXPECT_EQ(offset.value().millisSinceEpoch,
               whole.value().millisSinceEpoch + 125 + 5 * 3'600'000);
+
+    // The dot separator names the same instants.
+    for (const char* dotted : {"2009-04-11T14:22:07.125Z", "2009-04-11T14:22:07.125-05:00"}) {
+        const auto parsed = imos::parseSpecTime(dotted);
+        ASSERT_TRUE(parsed.ok()) << dotted;
+    }
+    EXPECT_EQ(imos::parseSpecTime("2009-04-11T14:22:07.125Z").value().millisSinceEpoch,
+              zulu.value().millisSinceEpoch);
+    EXPECT_EQ(imos::parseSpecTime("2009-04-11T14:22:07.125-05:00").value().millisSinceEpoch,
+              offset.value().millisSinceEpoch);
+
+    // The roItemCue example's own value, and its comma twin.
+    const auto cue = imos::parseSpecTime("2000-03-20T10:45:00.00");
+    const auto cueComma = imos::parseSpecTime("2000-03-20T10:45:00,00");
+    const auto cueWhole = imos::parseSpecTime("2000-03-20T10:45:00");
+    ASSERT_TRUE(cue.ok());
+    ASSERT_TRUE(cueComma.ok());
+    ASSERT_TRUE(cueWhole.ok());
+    EXPECT_EQ(cue.value().millisSinceEpoch, cueWhole.value().millisSinceEpoch);
+    EXPECT_EQ(cueComma.value().millisSinceEpoch, cueWhole.value().millisSinceEpoch);
+
+    // A separator with no digits after it is still malformed, either way.
+    EXPECT_FALSE(imos::parseSpecTime("2009-04-11T14:22:07,Z").ok());
+    EXPECT_FALSE(imos::parseSpecTime("2009-04-11T14:22:07.Z").ok());
 }
 
 // 7. Spec §3.9.1 note 5: after a leaseLock request the MOS "must send a
