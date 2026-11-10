@@ -362,10 +362,16 @@ void PeerSession::expectLateHeartbeatReplies(ChannelState& ch, const PendingSend
 
 void PeerSession::trySend(Channel channel) {
     ChannelState& ch = state(channel);
+    bool headBlocked = false;
     while (ch.connected && !ch.faulted && !ch.awaitingAck && !ch.queue.empty()) {
         PendingSend& front = ch.queue.front();
         if (!transmit(channel, front)) {
-            return;  // poll() keeps retrying while the queue is non-empty
+            // poll() keeps retrying while the queue is non-empty. A request
+            // the transport cannot take right now (its own connection is
+            // down while the peer's is up) must not hold up the answers the
+            // peer is owed — they travel on the peer's connection.
+            headBlocked = !front.isReply;
+            break;
         }
         front.sentOnce = true;
         ++front.transmissions;
@@ -392,7 +398,7 @@ void PeerSession::trySend(Channel channel) {
     // each side holding the other's reply behind its blocked queue. The same
     // holds while the head message is faulted: the peer is still owed its
     // answers.
-    if (!ch.connected || (!ch.awaitingAck && !ch.faulted)) {
+    if (!ch.connected || (!ch.awaitingAck && !ch.faulted && !headBlocked)) {
         return;
     }
     for (std::size_t i = 1; i < ch.queue.size();) {

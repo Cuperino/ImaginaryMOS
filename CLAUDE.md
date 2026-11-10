@@ -92,8 +92,12 @@ replace on first matching `mosSchema`), shared by the model and
 diff-reverts it, acking on ro and surfacing `nextItemReplace()`);
 `store/` has the file-backed `IMessageStore`; `transports/`
 has the real 4.0 WebSocket client+server over IXWebSocket (`ws40_ixws`:
-auth, TLS surface, deflate, standard/passive topologies, host-pumped
-threading), the WASM client (`ws40_emscripten`), and the M6 legacy pair —
+auth, TLS surface, deflate, host-pumped threading, and both spec
+topologies kept strictly apart: passive — one side dials with
+`passive=true`, and only then does `Ws40Server` originate on that accepted
+connection; standard — both sides listen and dial, composed per peer by
+`Ws40Endpoint`, requests on the dialed connection and responses back on
+the arrival connection), the WASM client (`ws40_emscripten`), and the M6 legacy pair —
 `tcp28/` (`Tcp28Endpoint`, one role-configured class running the spec's
 "two ports, four sockets": both roles listen on *and* dial mom 10540 and
 ro 10541, the device listens on aux 10542 and the NCS dials it; requests go

@@ -2,7 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // MOS 4.0 WebSocket transport over IXWebSocket (plan §5.1, milestone M2).
-// Client and server roles for standard and passive topologies. Threading
+// Client and server roles, and the two topologies the spec defines:
+//
+//  - Standard: "both the MOS and the NCS will open up one or two web socket
+//    connections ... to the other side's web socket URL". Each side dials
+//    the other and each side listens. A connection carries the requests of
+//    the side that opened it and the other side's responses to them —
+//    nothing else. Compose a Ws40Client (this side's dialed connections)
+//    with this peer's Ws40Server transport through Ws40Endpoint.
+//  - Passive: only the party inside the firewall dials, adding passive=true
+//    to the URL, which "instructs the receiving device to respond to the
+//    connection through the temporary opening": the listening party then
+//    originates its own messages down those same connections. Ws40Client
+//    with passive=true on one side, Ws40Server alone on the other.
+//
+// The server therefore originates on an accepted connection only when that
+// connection's URL carried passive=true; on any other it may only answer.
+// Threading
 // contract: IXWebSocket delivers callbacks on its own background threads;
 // this layer queues them, and the host drains the queue into the sans-I/O
 // PeerSession by calling pump() from its own poll loop — the session itself
@@ -17,6 +33,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -93,6 +110,15 @@ private:
 /// mismatches, rejected upgrades): (channel, diagnostic).
 using TransportErrorHandler = std::function<void(Channel, const std::string&)>;
 
+/// Where a transport's pump delivers connectivity changes and inbound
+/// frames. PeerSession is the usual destination (the pump(PeerSession&)
+/// overloads); Ws40Endpoint interposes one to merge two transports.
+struct ChannelEventSink {
+    std::function<void(Channel)> connected;
+    std::function<void(Channel)> disconnected;
+    std::function<void(Channel, std::span<const std::uint8_t>)> frame;
+};
+
 // ---------------------------------------------------------------- client --
 
 /// Shared by Ws40Client (IXWebSocket) and Ws40EmscriptenClient (browser,
@@ -108,11 +134,17 @@ struct ClientConfig {
     std::string ncsID;
     /// Vendor-extra query parameters, appended verbatim (plan §5.1).
     std::vector<std::pair<std::string, std::string>> extraParams;
-    /// Channels this client opens. Standard mode: the channels this role
-    /// originates traffic on. Passive mode: every channel the relationship
-    /// uses (the external party originates back down these connections).
+    /// Channels this client opens. Standard mode: the channels this side
+    /// originates traffic on (the peer dials its own for the traffic it
+    /// originates — see Ws40Endpoint). Passive mode: every channel the
+    /// relationship uses (the external party originates back down these
+    /// connections).
     std::vector<Channel> channels{Channel::Mom, Channel::Ro};
-    bool passive = false;  ///< adds passive=true to the URL
+    /// Adds passive=true to the URL: this side is the party inside the
+    /// firewall, and invites the listening party to originate its own
+    /// messages on these connections. Without it the connections carry
+    /// only this side's requests and the peer's responses to them.
+    bool passive = false;
 
     /// §3.4 wire encoding — selects binary (UCS-2) vs text (UTF-8) frames.
     /// Must match the PeerSession's wireEncode/wireDecode configuration.
@@ -147,12 +179,16 @@ public:
     /// session and drive reconnection. Call from the host's poll loop,
     /// before session.poll().
     void pump(PeerSession& session);
+    /// The same drain, delivered to an arbitrary sink (Ws40Endpoint).
+    void pump(const ChannelEventSink& sink);
 
     void setErrorHandler(TransportErrorHandler handler);
 
     /// Earliest instant pump() has scheduled work (reconnect attempts),
     /// for host scheduling alongside PeerSession::nextDeadline().
     [[nodiscard]] std::optional<MonotonicTime> nextDeadline() const;
+    /// Whether this client dials with passive=true.
+    [[nodiscard]] bool passive() const noexcept;
 
 private:
     struct Impl;
@@ -200,6 +236,9 @@ struct ServerEvent {
     std::string mosID;  ///< empty for Rejected before identification
     std::string ncsID;
     Channel channel = Channel::Mom;
+    /// ChannelConnected: the connection's URL carried passive=true, i.e.
+    /// the peer invited this side to originate on it.
+    bool passive = false;
     std::vector<std::uint8_t> frame;
     std::string diagnostic;
 };
@@ -226,11 +265,15 @@ public:
     /// stays reported across stop().
     [[nodiscard]] int port() const;
 
-    /// The per-peer ITransport to hand to that peer's PeerSession. send()
-    /// uses the connection currently claiming the channel — in passive mode
-    /// these are the inner party's held connections; in standard mode,
-    /// replies ride the inbound connection the request arrived on. Valid
-    /// after addPeer; stable for the server's lifetime.
+    /// The per-peer ITransport over the connections that peer opened to us.
+    /// sendReply() answers on the connection currently claiming the channel
+    /// — the one the peer's request arrived on. send() originates, and is
+    /// accepted only on a connection opened with passive=true (the inner
+    /// party's held connections); on a standard-mode connection it fails,
+    /// because this side must open its own connection for the messages it
+    /// originates. Hand it straight to the PeerSession for a passive-mode
+    /// peer; wrap it in a Ws40Endpoint with a Ws40Client for standard mode.
+    /// Valid after addPeer; stable for the server's lifetime.
     [[nodiscard]] ITransport& transportFor(std::string_view mosID, std::string_view ncsID);
 
     /// Drain one queued event, or nullopt. The host routes Frame /
@@ -241,6 +284,54 @@ public:
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
+};
+
+// -------------------------------------------------------------- endpoint --
+
+/// One peer relationship's transport in standard mode: the connections this
+/// side dialed (a Ws40Client) together with the connections the peer dialed
+/// to us (that peer's Ws40Server transport), presented to the PeerSession as
+/// a single ITransport.
+///
+/// Routing follows the spec literally — a connection carries its opener's
+/// requests and the responses to them:
+///  - send() (a message this side originates) goes out on the connection
+///    this side dialed. If there is none, it goes to the accepted side,
+///    which takes it only when the peer connected with passive=true.
+///  - sendReply() (a response) returns on the connection the request came
+///    in on: the peer's accepted connection — or this side's own dialed
+///    connection when it was opened with passive=true, since that is then
+///    where the peer originates.
+/// A channel is up for the session while either connection is.
+///
+/// Either side may be null: dialed-only is a plain client, accepted-only a
+/// plain server peer. The endpoint owns neither.
+class IMOS_TRANSPORTS_API Ws40Endpoint : public ITransport {
+public:
+    Ws40Endpoint(Ws40Client* dialed, ITransport* accepted);
+
+    // ITransport
+    Result<void> send(Channel channel, std::span<const std::uint8_t> frame) override;
+    Result<void> sendReply(Channel channel, std::span<const std::uint8_t> frame) override;
+    [[nodiscard]] bool isConnected(Channel channel) const override;
+
+    /// Drain the dialed side into the session and drive its reconnection.
+    /// Call from the host's poll loop, before session.poll().
+    void pump(PeerSession& session);
+    /// Route one of this peer's Ws40Server events (ChannelConnected /
+    /// ChannelDisconnected / Frame) into the session. Returns false for the
+    /// kinds it does not consume (ProtocolError, Rejected).
+    bool onServerEvent(const ServerEvent& event, PeerSession& session);
+
+    [[nodiscard]] std::optional<MonotonicTime> nextDeadline() const;
+
+private:
+    void linkChanged(Channel channel, bool dialedSide, bool up, PeerSession& session);
+
+    Ws40Client* dialed_;
+    ITransport* accepted_;
+    std::array<bool, kChannelCount> dialedUp_{};
+    std::array<bool, kChannelCount> acceptedUp_{};
 };
 
 #endif  // !defined(__EMSCRIPTEN__)

@@ -165,12 +165,27 @@ profile guides; a device serving objects, for example, does
 
 ## 4. Wire a transport {#gs_transport}
 
-The MOS 4.0 WebSocket transport lives in `imos::transports::ws40`. A **device**
-usually dials out with @ref imos::transports::ws40::Ws40Client; an **NCS**
-usually listens with @ref imos::transports::ws40::Ws40Server (a browser device
-uses the Emscripten client instead).
+The MOS 4.0 WebSocket transport lives in `imos::transports::ws40`. The spec
+defines two topologies, and which one you are in decides who may originate
+messages on which connection:
 
-### Device as a WebSocket client
+- **Passive mode** — only one party dials (the one inside the firewall),
+  with `passive=true` in the URL. That parameter is what invites the
+  listening party to originate its own messages down those connections.
+  One side uses @ref imos::transports::ws40::Ws40Client with
+  `passive = true`, the other @ref imos::transports::ws40::Ws40Server.
+- **Standard mode** — *both* parties listen and *both* dial the other. A
+  connection carries the requests of the side that opened it and the other
+  side's responses, nothing else. Each side composes a `Ws40Client` and its
+  `Ws40Server` peer transport with
+  @ref imos::transports::ws40::Ws40Endpoint.
+
+A listener never originates on a connection that did not say
+`passive=true`: without it, a lone client gets its own requests answered
+but the peer's messages never reach it. (A browser device can only dial, so
+it is always passive mode, via the Emscripten client.)
+
+### Passive mode: device dials, NCS listens
 
 ```cpp
 namespace ws40 = imos::transports::ws40;
@@ -180,6 +195,7 @@ clientConfig.endpointUrl  = "ws://newsroom.example.com:10540/mos/Communication";
 clientConfig.mosID        = session.mosID;
 clientConfig.ncsID        = session.ncsID;
 clientConfig.channels     = {imos::Channel::Mom, imos::Channel::Ro};
+clientConfig.passive      = true;  // the NCS originates back down these connections
 clientConfig.wireEncoding = imos::encoding::WireEncoding::Ucs2Be; // match session
 // clientConfig.auth = imos::ws40::BasicCredentials{"user", "pass"}; // if required
 // clientConfig.tls.enabled = true; // wss:// endpoints
@@ -191,7 +207,7 @@ device.attach(myObjectSource);
 client.start();                       // begins connecting (asynchronous)
 ```
 
-### NCS as a WebSocket server
+The listening side:
 
 ```cpp
 ws40::ServerConfig serverConfig;
@@ -206,6 +222,37 @@ incs::Ncs ncs{{session, ncsInfo},
               imos::PeerSession::Dependencies{
                   &clock, &server.transportFor(session.mosID, session.ncsID), &store}};
 ```
+
+### Standard mode: both sides listen and dial
+
+```cpp
+ws40::Ws40Server server{serverConfig};            // the peer dials this
+server.addPeer({session.mosID, session.ncsID});
+server.start();
+
+ws40::ClientConfig clientConfig;                  // we dial the peer
+clientConfig.endpointUrl = "wss://peer.example.com/mos/Communication";
+clientConfig.mosID       = session.mosID;
+clientConfig.ncsID       = session.ncsID;
+clientConfig.channels    = {imos::Channel::Mom, imos::Channel::Ro};
+ws40::Ws40Client client{clientConfig, &clock, &random};
+
+ws40::Ws40Endpoint endpoint{&client, &server.transportFor(session.mosID, session.ncsID)};
+imos::Device device{{session, info},
+                    imos::PeerSession::Dependencies{&clock, &endpoint, &store}};
+client.start();
+
+// In the host loop, instead of pumping the client and routing server
+// events into the session yourself:
+endpoint.pump(device.session());
+while (auto event = server.nextEvent()) {
+    endpoint.onServerEvent(*event, device.session());
+}
+```
+
+Requests this side originates go out on the connections it dialed; its
+responses return on the peer's connections. If its own connection is down
+the request waits for the redial rather than borrowing the peer's.
 
 ## 5. Run the host loop {#gs_loop}
 

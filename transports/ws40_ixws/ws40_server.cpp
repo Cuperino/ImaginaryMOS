@@ -47,12 +47,26 @@ struct Ws40Server::Impl {
         PeerTransport(Impl* owner, std::string peerKey)
             : owner_(owner), peerKey_(std::move(peerKey)) {}
 
+        // Originating: only a connection the peer opened with passive=true
+        // invites that ("respond to the connection through the temporary
+        // opening"). On a standard-mode connection this side may only
+        // answer; its own messages need its own connection to the peer.
         Result<void> send(Channel channel, std::span<const std::uint8_t> frame) override {
+            return sendOn(channel, frame, /*originating=*/true);
+        }
+
+        Result<void> sendReply(Channel channel, std::span<const std::uint8_t> frame) override {
+            return sendOn(channel, frame, /*originating=*/false);
+        }
+
+        Result<void> sendOn(Channel channel, std::span<const std::uint8_t> frame,
+                            bool originating) {
             if (owner_ == nullptr) {
                 return makeError(ErrorCode::NotFound, "peer is not registered");
             }
             std::shared_ptr<ix::WebSocket> socket;
             bool text = false;
+            bool passive = false;
             {
                 const std::scoped_lock lock{owner_->mutex};
                 auto it = owner_->peers.find(peerKey_);
@@ -60,12 +74,20 @@ struct Ws40Server::Impl {
                     return makeError(ErrorCode::NotFound, "peer is not registered");
                 }
                 socket = it->second.claims[static_cast<std::size_t>(channel)].lock();
+                passive = it->second.passive[static_cast<std::size_t>(channel)];
                 text = detail::wantsTextFrames(it->second.config.wireEncoding);
             }
             if (socket == nullptr || socket->getReadyState() != ix::ReadyState::Open) {
                 return makeError(ErrorCode::IoError, "no live connection claims the " +
                                                          std::string{channelName(channel)} +
                                                          " channel for this peer");
+            }
+            if (originating && !passive) {
+                return makeError(ErrorCode::WrongState,
+                                 "the peer's " + std::string{channelName(channel)} +
+                                     " connection was not opened with passive=true: it carries "
+                                     "the peer's requests and our responses only (standard "
+                                     "mode — originate on a connection dialed to the peer)");
             }
             const std::string data{reinterpret_cast<const char*>(frame.data()), frame.size()};
             const ix::WebSocketSendInfo sent =
@@ -99,6 +121,7 @@ struct Ws40Server::Impl {
         ServerPeerConfig config;
         std::unique_ptr<PeerTransport> transport;
         std::array<std::weak_ptr<ix::WebSocket>, kChannelCount> claims;
+        std::array<bool, kChannelCount> passive{};  ///< per claim: URL said passive=true
     };
 
     /// What a validated connection is bound to; carried by the per-socket
@@ -203,11 +226,14 @@ struct Ws40Server::Impl {
                                    " channel is already claimed for this peer";
                 } else {
                     slot = socket;
+                    it->second.passive[static_cast<std::size_t>(claim.channel)] =
+                        params.value().passive;
                     ServerEvent event;
                     event.kind = ServerEvent::Kind::ChannelConnected;
                     event.mosID = claim.mosID;
                     event.ncsID = claim.ncsID;
                     event.channel = claim.channel;
+                    event.passive = params.value().passive;
                     queue.push_back(std::move(event));  // mutex already held
                 }
             }
@@ -231,6 +257,7 @@ struct Ws40Server::Impl {
             return;  // another connection took the slot over; not ours to drop
         }
         slot.reset();
+        it->second.passive[static_cast<std::size_t>(claim.channel)] = false;
         ServerEvent event;
         event.kind = ServerEvent::Kind::ChannelDisconnected;
         event.mosID = claim.mosID;

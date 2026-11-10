@@ -9,6 +9,7 @@
 // reconnect after a listener restart. Real sockets, real threads — the
 // deterministic reliability logic is pinned separately in session tests.
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -34,6 +35,7 @@
 #include <incs/ncs.h>
 
 using imos::Channel;
+using imos::ITransport;
 using imos::MonotonicTime;
 using imos::PeerSession;
 using imos::SessionConfig;
@@ -54,6 +56,7 @@ using imos::transports::ws40::ServerConfig;
 using imos::transports::ws40::ServerEvent;
 using imos::transports::ws40::ServerPeerConfig;
 using imos::transports::ws40::Ws40Client;
+using imos::transports::ws40::Ws40Endpoint;
 using imos::transports::ws40::Ws40Server;
 
 namespace {
@@ -240,38 +243,224 @@ const SessionEvent* findAck(const std::vector<SessionEvent>& events, MessageType
 
 }  // namespace
 
-TEST(Ws40Transport, StandardTopologyProfile0BothRoles) {
-    Rig rig;
-    rig.startServer();
-    rig.startClient({Channel::Ro}, /*passive=*/false);
-    ASSERT_TRUE(rig.waitForConnected(Channel::Ro));
+// ---- standard topology (spec §1, "Technical Details") -----------------------
+//
+// "For 'Standard' MOS communication (not Passive MOS), both the MOS and the
+// NCS will open up one or two web socket connections ... to the other side's
+// web socket URL." Each role runs a listener and dials the other; a
+// connection carries its opener's requests and the responses to them.
 
-    // Device role asks; NCS role answers (reqMachInfo → listMachInfo).
-    ASSERT_TRUE(rig.deviceSession->enqueue(Channel::Ro, makeReqMachInfo()).ok());
+namespace {
+
+/// Both roles in standard mode: each has a Ws40Server (the peer dials it), a
+/// Ws40Client (dialing the peer's server), and a Ws40Endpoint joining the
+/// two into the one transport its PeerSession uses.
+struct StandardRig {
+    struct Side {
+        imos::InMemoryMessageStore store;
+        std::unique_ptr<Ws40Server> server;
+        std::unique_ptr<Ws40Client> client;
+        std::unique_ptr<Ws40Endpoint> endpoint;
+        std::unique_ptr<PeerSession> session;
+        std::unique_ptr<Profile0Responder> responder;
+        std::vector<SessionEvent> events;
+        /// MOS messages that arrived over connections the *peer* opened.
+        std::vector<MessageType> arrivedOnAccepted;
+    };
+
+    SystemClock clock;
+    Side device;
+    Side ncs;
+
+    static void listen(Side& side) {
+        ServerConfig config;
+        config.host = "127.0.0.1";
+        config.port = 0;
+        side.server = std::make_unique<Ws40Server>(config);
+        ServerPeerConfig peer;
+        peer.mosID = kMosID;
+        peer.ncsID = kNcsID;
+        ASSERT_TRUE(side.server->addPeer(peer).ok());
+        ASSERT_TRUE(side.server->start().ok());
+    }
+
+    void dial(Side& side, const Side& peer, DeviceType type) {
+        ClientConfig config;
+        config.endpointUrl =
+            "ws://127.0.0.1:" + std::to_string(peer.server->port()) + "/mos/Communication";
+        config.mosID = kMosID;
+        config.ncsID = kNcsID;
+        config.channels = {Channel::Mom, Channel::Ro};
+        config.passive = false;  // standard mode
+        config.reconnect.initialDelayMillis = 50;
+        config.reconnect.maxDelayMillis = 200;
+        side.client = std::make_unique<Ws40Client>(config, &clock);
+        side.endpoint = std::make_unique<Ws40Endpoint>(side.client.get(),
+                                                       &side.server->transportFor(kMosID, kNcsID));
+        side.session = std::make_unique<PeerSession>(
+            sessionConfig(), PeerSession::Dependencies{&clock, side.endpoint.get(), &side.store});
+        side.responder =
+            std::make_unique<Profile0Responder>(machineInfo(type), side.session.get(), &clock);
+        ASSERT_TRUE(side.client->start().ok());
+    }
+
+    void start() {
+        listen(device);
+        listen(ncs);
+        dial(device, ncs, DeviceType::Mos);
+        dial(ncs, device, DeviceType::Ncs);
+    }
+
+    static void pumpSide(Side& side) {
+        side.endpoint->pump(*side.session);
+        while (auto event = side.server->nextEvent()) {
+            if (event->kind == ServerEvent::Kind::Frame) {
+                auto decoded = imos::encoding::decodeToUtf8(event->frame, {});
+                if (decoded.ok()) {
+                    if (auto parsed = imos::codec::parseMessage(decoded.value()); parsed.ok()) {
+                        side.arrivedOnAccepted.push_back(parsed.value().type());
+                    }
+                }
+            }
+            (void)side.endpoint->onServerEvent(*event, *side.session);
+        }
+        side.session->poll();
+        while (auto event = side.session->nextEvent()) {
+            if (!side.responder->handle(*event)) {
+                side.events.push_back(std::move(*event));
+            }
+        }
+    }
+
+    bool waitFor(const std::function<bool()>& predicate, int timeoutMillis = 5000) {
+        const auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::milliseconds{timeoutMillis};
+        while (std::chrono::steady_clock::now() < deadline) {
+            pumpSide(device);
+            pumpSide(ncs);
+            if (predicate()) {
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        }
+        return false;
+    }
+
+    /// All four connections up: each side's two dialed, each side's two
+    /// accepted.
+    bool waitForLinks() {
+        const auto up = [](const Side& side) {
+            ITransport& accepted = side.server->transportFor(kMosID, kNcsID);
+            return side.client->isConnected(Channel::Mom) &&
+                   side.client->isConnected(Channel::Ro) && accepted.isConnected(Channel::Mom) &&
+                   accepted.isConnected(Channel::Ro);
+        };
+        return waitFor([&] { return up(device) && up(ncs); });
+    }
+};
+
+int countOf(const std::vector<MessageType>& types, MessageType type) {
+    return static_cast<int>(std::count(types.begin(), types.end(), type));
+}
+
+}  // namespace
+
+// Four connections, and each carries only its opener's requests plus the
+// other side's responses: a request arrives on a connection the requester
+// opened, and its answer comes back on that same connection.
+TEST(Ws40Transport, StandardTopologyEachSideDialsAndRepliesRideTheRequestersConnection) {
+    StandardRig rig;
+    rig.start();
+    ASSERT_TRUE(rig.waitForLinks());
+
+    for (const Channel channel : {Channel::Mom, Channel::Ro}) {
+        rig.device.events.clear();
+        rig.ncs.events.clear();
+        ASSERT_TRUE(rig.device.session->enqueue(channel, makeReqMachInfo()).ok());
+        ASSERT_TRUE(rig.waitFor([&] {
+            return findAck(rig.device.events, MessageType::ListMachInfo) != nullptr;
+        })) << "device → NCS on "
+            << imos::channelName(channel);
+        ASSERT_TRUE(rig.ncs.session->enqueue(channel, makeReqMachInfo()).ok());
+        ASSERT_TRUE(rig.waitFor([&] {
+            return findAck(rig.ncs.events, MessageType::ListMachInfo) != nullptr;
+        })) << "NCS → device on "
+            << imos::channelName(channel);
+    }
+
+    // On the connections the device opened to the NCS, the NCS saw exactly
+    // the device's two requests — and none of the device's answers to the
+    // NCS's own requests, which went back on the NCS's connections.
+    EXPECT_EQ(countOf(rig.ncs.arrivedOnAccepted, MessageType::ReqMachInfo), 2);
+    EXPECT_EQ(countOf(rig.ncs.arrivedOnAccepted, MessageType::ListMachInfo), 0);
+    EXPECT_EQ(countOf(rig.device.arrivedOnAccepted, MessageType::ReqMachInfo), 2);
+    EXPECT_EQ(countOf(rig.device.arrivedOnAccepted, MessageType::ListMachInfo), 0);
+}
+
+// With its own connection to the peer down, a standard-mode side does not
+// borrow the peer's: the request waits, and goes out once the dial is back.
+TEST(Ws40Transport, StandardTopologyNeverOriginatesOnThePeersConnection) {
+    StandardRig rig;
+    rig.start();
+    ASSERT_TRUE(rig.waitForLinks());
+
+    // The NCS loses its listener, so the device's dialed connections drop —
+    // but the NCS's own connections to the device stay up.
+    rig.ncs.server->stop();
+    ASSERT_TRUE(rig.waitFor([&] { return !rig.device.client->isConnected(Channel::Ro); }));
+    ASSERT_TRUE(rig.device.endpoint->isConnected(Channel::Ro));  // via the NCS's connection
+
+    ASSERT_TRUE(rig.device.session->enqueue(Channel::Ro, makeReqMachInfo()).ok());
+    EXPECT_FALSE(rig.waitFor(
+        [&] { return findAck(rig.device.events, MessageType::ListMachInfo) != nullptr; }, 400))
+        << "the device originated on a connection the NCS opened";
+
+    // The NCS still reaches the device on its own connection meanwhile.
+    ASSERT_TRUE(rig.ncs.session->enqueue(Channel::Ro, makeReqMachInfo()).ok());
+    ASSERT_TRUE(
+        rig.waitFor([&] { return findAck(rig.ncs.events, MessageType::ListMachInfo) != nullptr; }));
+
+    // Listener back → the device redials → its queued request goes out.
+    ASSERT_TRUE(rig.ncs.server->start().ok());
     ASSERT_TRUE(rig.waitFor(
-        [&] { return findAck(rig.deviceEvents, MessageType::ListMachInfo) != nullptr; }));
-    const SessionEvent* deviceAck = findAck(rig.deviceEvents, MessageType::ListMachInfo);
-    const auto ncsInfo = parseListMachInfo(deviceAck->message);
-    ASSERT_TRUE(ncsInfo.ok());
-    EXPECT_EQ(ncsInfo.value().info.deviceType, DeviceType::Ncs);
-    EXPECT_EQ(ncsInfo.value().info.model, "NCS-1");
-    EXPECT_TRUE(ncsInfo.value().info.profiles[0]);
+        [&] { return findAck(rig.device.events, MessageType::ListMachInfo) != nullptr; }));
+}
 
-    // NCS role asks back down the same connection; device role answers.
-    ASSERT_TRUE(rig.ncsSession->enqueue(Channel::Ro, makeReqMachInfo()).ok());
-    ASSERT_TRUE(
-        rig.waitFor([&] { return findAck(rig.ncsEvents, MessageType::ListMachInfo) != nullptr; }));
-    const SessionEvent* ncsAck = findAck(rig.ncsEvents, MessageType::ListMachInfo);
-    const auto deviceInfo = parseListMachInfo(ncsAck->message);
-    ASSERT_TRUE(deviceInfo.ok());
-    EXPECT_EQ(deviceInfo.value().info.deviceType, DeviceType::Mos);
-    EXPECT_EQ(deviceInfo.value().info.model, "VTR-7");
+// passive=true is what "instructs the receiving device to respond to the
+// connection through the temporary opening". Without it the listening side
+// answers on the connection but must not originate on it; with it, it may.
+TEST(Ws40Transport, ListenerOriginatesOnlyOnPassiveConnections) {
+    {
+        Rig rig;
+        rig.startServer();
+        rig.startClient({Channel::Ro}, /*passive=*/false);
+        ASSERT_TRUE(rig.waitForConnected(Channel::Ro));
+        ITransport& toDevice = rig.server->transportFor(kMosID, kNcsID);
+        ASSERT_TRUE(rig.waitFor([&] { return toDevice.isConnected(Channel::Ro); }));
 
-    // Heartbeat exchange rides the session machinery over the real wire.
-    Message heartbeat = makeMessage(MessageType::Heartbeat);
-    ASSERT_TRUE(rig.ncsSession->enqueue(Channel::Ro, std::move(heartbeat)).ok());
-    ASSERT_TRUE(
-        rig.waitFor([&] { return findAck(rig.ncsEvents, MessageType::Heartbeat) != nullptr; }));
+        // The dialer's request is answered on its connection...
+        ASSERT_TRUE(rig.deviceSession->enqueue(Channel::Ro, makeReqMachInfo()).ok());
+        ASSERT_TRUE(rig.waitFor(
+            [&] { return findAck(rig.deviceEvents, MessageType::ListMachInfo) != nullptr; }));
+
+        // ...but the listener may not originate on it.
+        const std::vector<std::uint8_t> frame{0x00, 0x3C};
+        const imos::Result<void> originated = toDevice.send(Channel::Ro, frame);
+        ASSERT_FALSE(originated.ok());
+        EXPECT_NE(originated.error().message.find("passive=true"), std::string::npos);
+        ASSERT_TRUE(rig.ncsSession->enqueue(Channel::Ro, makeReqMachInfo()).ok());
+        EXPECT_FALSE(rig.waitFor(
+            [&] { return findAck(rig.ncsEvents, MessageType::ListMachInfo) != nullptr; }, 400));
+    }
+    {
+        Rig rig;
+        rig.startServer();
+        rig.startClient({Channel::Ro}, /*passive=*/true);
+        ASSERT_TRUE(rig.waitForConnected(Channel::Ro));
+        ASSERT_TRUE(rig.ncsSession->enqueue(Channel::Ro, makeReqMachInfo()).ok());
+        ASSERT_TRUE(rig.waitFor(
+            [&] { return findAck(rig.ncsEvents, MessageType::ListMachInfo) != nullptr; }));
+    }
 }
 
 TEST(Ws40Transport, Utf8TextFramesPerPeerOptionWorksEndToEnd) {
@@ -293,7 +482,7 @@ TEST(Ws40Transport, FrameTypeMismatchIsSurfacedNotDelivered) {
     // surfaces the misconfiguration instead of guessing.
     Rig rig;
     rig.startServer(WireEncoding::Ucs2Be);
-    rig.startClient({Channel::Ro}, /*passive=*/false, WireEncoding::Utf8);
+    rig.startClient({Channel::Ro}, /*passive=*/true, WireEncoding::Utf8);
     ASSERT_TRUE(rig.waitForConnected(Channel::Ro));
 
     ASSERT_TRUE(rig.deviceSession->enqueue(Channel::Ro, makeReqMachInfo()).ok());
@@ -522,6 +711,9 @@ TEST(Ws40Transport, Profile1ObjectWorkflowOverWebSocket) {
     clientConfig.mosID = kMosID;
     clientConfig.ncsID = kNcsID;
     clientConfig.channels = {Channel::Mom};
+    // One side dials: that is passive mode — the NCS originates back down
+    // these connections only because the URL says passive=true.
+    clientConfig.passive = true;
     Ws40Client client{clientConfig, &clock};
     imos::Device device{{sessionConfig(), machineInfo(DeviceType::Mos)},
                         PeerSession::Dependencies{&clock, &client, &deviceStore}};
@@ -628,6 +820,9 @@ TEST(Ws40Transport, Profile2RunningOrderWorkflowOverWebSocket) {
     clientConfig.mosID = kMosID;
     clientConfig.ncsID = kNcsID;
     clientConfig.channels = {Channel::Ro};
+    // One side dials: that is passive mode — the NCS originates back down
+    // these connections only because the URL says passive=true.
+    clientConfig.passive = true;
     Ws40Client client{clientConfig, &clock};
     imos::Device device{{sessionConfig(), machineInfo(DeviceType::Mos)},
                         PeerSession::Dependencies{&clock, &client, &deviceStore}};
@@ -755,6 +950,9 @@ TEST(Ws40Transport, Profile4AgencyPayloadPreservedOverWebSocketBothEncodings) {
         clientConfig.mosID = kMosID;
         clientConfig.ncsID = kNcsID;
         clientConfig.channels = {Channel::Ro};
+        // One side dials: that is passive mode — the NCS originates back down
+        // these connections only because the URL says passive=true.
+        clientConfig.passive = true;
         clientConfig.wireEncoding = encoding;
         Ws40Client client{clientConfig, &clock};
         imos::Device device{{sessionConfig(encoding), machineInfo(DeviceType::Mos)},
@@ -882,6 +1080,9 @@ TEST(Ws40Transport, Profile5ItemControlOverWebSocket) {
     clientConfig.mosID = kMosID;
     clientConfig.ncsID = kNcsID;
     clientConfig.channels = {Channel::Ro};
+    // One side dials: that is passive mode — the NCS originates back down
+    // these connections only because the URL says passive=true.
+    clientConfig.passive = true;
     Ws40Client client{clientConfig, &clock};
     imos::Device device{{sessionConfig(), machineInfo(DeviceType::Mos)},
                         PeerSession::Dependencies{&clock, &client, &deviceStore}};
@@ -1081,8 +1282,8 @@ TEST(Ws40Transport, WasmClientProfile0SmokeThreaded) {
 
     std::atomic<int> nodeExit{-1};
     std::thread runner{[&] {
-        const std::string command = node + wsFlag + " " + js + " " +
-                                    std::to_string(rig.port) + " thread >/dev/null 2>&1";
+        const std::string command =
+            node + wsFlag + " " + js + " " + std::to_string(rig.port) + " thread >/dev/null 2>&1";
         nodeExit = std::system(command.c_str());
     }};
 
@@ -1300,6 +1501,9 @@ TEST(Ws40Transport, Profile3ThreeChannelWorkflowOverWebSocket) {
     clientConfig.mosID = kMosID;
     clientConfig.ncsID = kNcsID;
     clientConfig.channels = {Channel::Mom, Channel::Ro, Channel::Aux};
+    // One side dials: that is passive mode — the NCS originates back down
+    // these connections only because the URL says passive=true.
+    clientConfig.passive = true;
     Ws40Client client{clientConfig, &clock};
     imos::Device device{{sessionConfig(), machineInfo(DeviceType::Mos)},
                         PeerSession::Dependencies{&clock, &client, &deviceStore}};
@@ -1421,6 +1625,9 @@ TEST(Ws40Transport, Profile7StoryActionOverWebSocket) {
     clientConfig.mosID = kMosID;
     clientConfig.ncsID = kNcsID;
     clientConfig.channels = {Channel::Ro};
+    // One side dials: that is passive mode — the NCS originates back down
+    // these connections only because the URL says passive=true.
+    clientConfig.passive = true;
     Ws40Client client{clientConfig, &clock};
     imos::Device device{{sessionConfig(), machineInfo(DeviceType::Mos)},
                         PeerSession::Dependencies{&clock, &client, &deviceStore}};

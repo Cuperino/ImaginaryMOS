@@ -23,6 +23,7 @@ endif()
 set(_imos_transport_sources
   ws40_ixws/probe.cpp
   ws40_ixws/ws40_client.cpp
+  ws40_ixws/ws40_endpoint.cpp
   ws40_ixws/ws40_server.cpp)
 if(IMOS_ENABLE_COMPAT28)
   list(APPEND _imos_transport_sources

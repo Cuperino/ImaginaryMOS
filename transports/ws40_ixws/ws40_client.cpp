@@ -202,7 +202,21 @@ bool Ws40Client::isConnected(Channel channel) const {
     return slot.socket != nullptr && slot.socket->getReadyState() == ix::ReadyState::Open;
 }
 
+bool Ws40Client::passive() const noexcept {
+    return impl_->config.passive;
+}
+
 void Ws40Client::pump(PeerSession& session) {
+    ChannelEventSink sink;
+    sink.connected = [&session](Channel channel) { session.onChannelConnected(channel); };
+    sink.disconnected = [&session](Channel channel) { session.onChannelDisconnected(channel); };
+    sink.frame = [&session](Channel channel, std::span<const std::uint8_t> frame) {
+        session.onFrameReceived(channel, frame);
+    };
+    pump(sink);
+}
+
+void Ws40Client::pump(const ChannelEventSink& sink) {
     std::deque<QueuedEvent> local;
     {
         const std::scoped_lock lock{impl_->queueMutex};
@@ -214,7 +228,7 @@ void Ws40Client::pump(PeerSession& session) {
             case QueuedEvent::Kind::Connected:
                 slot.policy->onConnected();
                 slot.sessionConnected = true;
-                session.onChannelConnected(event.channel);
+                sink.connected(event.channel);
                 break;
             case QueuedEvent::Kind::Disconnected:
                 slot.policy->onDisconnected();
@@ -224,7 +238,7 @@ void Ws40Client::pump(PeerSession& session) {
                 }
                 if (slot.sessionConnected) {
                     slot.sessionConnected = false;
-                    session.onChannelDisconnected(event.channel);
+                    sink.disconnected(event.channel);
                 }
                 break;
             case QueuedEvent::Kind::Frame: {
@@ -238,10 +252,10 @@ void Ws40Client::pump(PeerSession& session) {
                     }
                     break;  // never delivered: setup problem, not data
                 }
-                session.onFrameReceived(
-                    event.channel, std::span<const std::uint8_t>{
-                                       reinterpret_cast<const std::uint8_t*>(event.payload.data()),
-                                       event.payload.size()});
+                sink.frame(event.channel,
+                           std::span<const std::uint8_t>{
+                               reinterpret_cast<const std::uint8_t*>(event.payload.data()),
+                               event.payload.size()});
                 break;
             }
         }
