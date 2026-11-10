@@ -13,6 +13,7 @@
 // P5 item control, and P7 story actions. Deterministic deframer/reliability
 // logic stays in the fake-clock unit suites.
 
+#include <algorithm>
 #include <chrono>
 #include <functional>
 #include <map>
@@ -899,14 +900,19 @@ TEST(Tcp28Transport, Profile3ThreeChannelWorkflowOverTcp) {
     // Placeholder create end-to-end: ACK carries the objID, the push follows.
     ASSERT_TRUE(
         rig.ncs->createObject(imos::profiles::makeMosObjCreate("TCP Fire", "VIDEO", "59.94")).ok());
-    ASSERT_TRUE(rig.waitFor([&] { return drain() || rig.ncs->object("TCPOBJ-1") != nullptr; }));
-    bool sawCreated = false;
-    for (const auto& event : dirEvents) {
-        sawCreated =
-            sawCreated || (event.type == imos::profiles::DirectoryEventType::ObjectCreated &&
-                           event.objID == "TCPOBJ-1");
-    }
-    EXPECT_TRUE(sawCreated);
+    // With four sockets the two travel on different connections — the ACK
+    // back down the NCS's, the push on the device's own — so either may
+    // land first; both must.
+    const auto sawCreated = [&] {
+        return std::any_of(dirEvents.begin(), dirEvents.end(), [](const auto& event) {
+            return event.type == imos::profiles::DirectoryEventType::ObjectCreated &&
+                   event.objID == "TCPOBJ-1";
+        });
+    };
+    ASSERT_TRUE(rig.waitFor([&] {
+        (void)drain();
+        return rig.ncs->object("TCPOBJ-1") != nullptr && sawCreated();
+    }));
 
     rig.stop();
 }

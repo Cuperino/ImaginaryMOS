@@ -50,46 +50,67 @@ bool Ws40Endpoint::isConnected(Channel channel) const {
            (accepted_ != nullptr && accepted_->isConnected(channel));
 }
 
-void Ws40Endpoint::linkChanged(Channel channel, bool dialedSide, bool up, PeerSession& session) {
+void Ws40Endpoint::linkChanged(Channel channel, bool dialedSide, bool up,
+                               const ChannelEventSink& sink) {
     const auto index = static_cast<std::size_t>(channel);
     const bool before = dialedUp_[index] || acceptedUp_[index];
     (dialedSide ? dialedUp_ : acceptedUp_)[index] = up;
     const bool after = dialedUp_[index] || acceptedUp_[index];
     // The session sees one channel: up while either connection is.
     if (!before && after) {
-        session.onChannelConnected(channel);
+        sink.connected(channel);
     } else if (before && !after) {
-        session.onChannelDisconnected(channel);
+        sink.disconnected(channel);
     }
 }
 
-void Ws40Endpoint::pump(PeerSession& session) {
-    if (dialed_ == nullptr) {
-        return;
-    }
+namespace {
+
+ChannelEventSink sessionSink(PeerSession& session) {
     ChannelEventSink sink;
-    sink.connected = [this, &session](Channel channel) {
-        linkChanged(channel, /*dialedSide=*/true, /*up=*/true, session);
-    };
-    sink.disconnected = [this, &session](Channel channel) {
-        linkChanged(channel, /*dialedSide=*/true, /*up=*/false, session);
-    };
+    sink.connected = [&session](Channel channel) { session.onChannelConnected(channel); };
+    sink.disconnected = [&session](Channel channel) { session.onChannelDisconnected(channel); };
     sink.frame = [&session](Channel channel, std::span<const std::uint8_t> frame) {
         session.onFrameReceived(channel, frame);
     };
-    dialed_->pump(sink);
+    return sink;
+}
+
+}  // namespace
+
+void Ws40Endpoint::pump(PeerSession& session) {
+    pump(sessionSink(session));
 }
 
 bool Ws40Endpoint::onServerEvent(const ServerEvent& event, PeerSession& session) {
+    return onServerEvent(event, sessionSink(session));
+}
+
+void Ws40Endpoint::pump(const ChannelEventSink& sink) {
+    if (dialed_ == nullptr) {
+        return;
+    }
+    ChannelEventSink merged;
+    merged.connected = [this, &sink](Channel channel) {
+        linkChanged(channel, /*dialedSide=*/true, /*up=*/true, sink);
+    };
+    merged.disconnected = [this, &sink](Channel channel) {
+        linkChanged(channel, /*dialedSide=*/true, /*up=*/false, sink);
+    };
+    merged.frame = sink.frame;
+    dialed_->pump(merged);
+}
+
+bool Ws40Endpoint::onServerEvent(const ServerEvent& event, const ChannelEventSink& sink) {
     switch (event.kind) {
         case ServerEvent::Kind::ChannelConnected:
-            linkChanged(event.channel, /*dialedSide=*/false, /*up=*/true, session);
+            linkChanged(event.channel, /*dialedSide=*/false, /*up=*/true, sink);
             return true;
         case ServerEvent::Kind::ChannelDisconnected:
-            linkChanged(event.channel, /*dialedSide=*/false, /*up=*/false, session);
+            linkChanged(event.channel, /*dialedSide=*/false, /*up=*/false, sink);
             return true;
         case ServerEvent::Kind::Frame:
-            session.onFrameReceived(event.channel, event.frame);
+            sink.frame(event.channel, event.frame);
             return true;
         case ServerEvent::Kind::ProtocolError:
         case ServerEvent::Kind::Rejected:

@@ -4,9 +4,11 @@
 #include <imos/transports/ws40.h>
 
 #include <array>
+#include <chrono>
 #include <deque>
 #include <map>
 #include <mutex>
+#include <thread>
 
 #include <ixwebsocket/IXGetFreePort.h>
 #include <ixwebsocket/IXWebSocket.h>
@@ -29,6 +31,14 @@ std::string peerKeyOf(std::string_view mosID, std::string_view ncsID) {
 /// that vanishingly unlikely without ever blocking.
 constexpr int kEphemeralBindAttempts = 8;
 constexpr int kMaxPort = 65535;
+
+/// ix::WebSocketServer with its accept gate reachable: stop() needs to
+/// refuse new connections while it drains the existing ones.
+class DrainableServer : public ix::WebSocketServer {
+public:
+    using ix::SocketServer::stopAcceptingConnections;
+    using ix::WebSocketServer::WebSocketServer;
+};
 
 }  // namespace
 
@@ -136,7 +146,7 @@ struct Ws40Server::Impl {
 
     ServerConfig config;  ///< as configured; never rewritten by start()
     ILogger* logger = nullptr;
-    std::unique_ptr<ix::WebSocketServer> server;
+    std::unique_ptr<DrainableServer> server;
     bool started = false;
     int boundPort = 0;  ///< what start() actually bound (0 until it succeeds)
 
@@ -287,7 +297,7 @@ struct Ws40Server::Impl {
     /// configured options and the connection callback. False leaves no
     /// server behind.
     bool listenOn(int port) {
-        server = std::make_unique<ix::WebSocketServer>(
+        server = std::make_unique<DrainableServer>(
             port, config.host, ix::SocketServer::kDefaultTcpBacklog, config.maxConnections,
             config.handshakeTimeoutSecs);
         if (!config.enableDeflate) {
@@ -406,6 +416,26 @@ Result<void> Ws40Server::start() {
 
 void Ws40Server::stop() {
     if (impl_->server != nullptr) {
+        // IXWebSocket's own stop() asks each connection to close exactly
+        // once and then joins until every connection thread has ended. A
+        // connection that misses that single request — it was still
+        // mid-handshake, or its peer vanished and left it open on a dead
+        // socket — never ends, and the join never returns. So drain here
+        // first: refuse new connections, then keep asking the remaining
+        // ones to close until they are gone (bounded, so a connection that
+        // will not die cannot hold shutdown hostage any longer than before).
+        impl_->server->stopAcceptingConnections();
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+        while (std::chrono::steady_clock::now() < deadline) {
+            const auto clients = impl_->server->getClients();
+            if (clients.empty()) {
+                break;
+            }
+            for (const std::shared_ptr<ix::WebSocket>& client : clients) {
+                client->close();
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        }
         impl_->server->stop();
         impl_->server.reset();
     }

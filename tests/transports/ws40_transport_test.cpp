@@ -359,6 +359,109 @@ struct StandardRig {
     }
 };
 
+/// Standard-mode wiring for the facade workflow suites: each role listens
+/// (the peer dials it) and dials the peer, and a Ws40Endpoint per role joins
+/// the two halves into the transport its facade is built on. Nothing here
+/// sets passive=true — every message a role originates travels on a
+/// connection that role opened. The device dials every channel it
+/// originates on (not aux: queries only flow NCS → MOS); the NCS dials all.
+struct StandardLink {
+    StandardLink(imos::IClock& clock, std::vector<Channel> channels,
+                 WireEncoding encoding = WireEncoding::Ucs2Be)
+        : channels_(std::move(channels)) {
+        ServerConfig serverConfig;
+        serverConfig.host = "127.0.0.1";  // port stays 0 → ephemeral
+        ServerPeerConfig peer;
+        peer.mosID = kMosID;
+        peer.ncsID = kNcsID;
+        peer.wireEncoding = encoding;
+        ncsServer_ = std::make_unique<Ws40Server>(serverConfig);
+        deviceServer_ = std::make_unique<Ws40Server>(serverConfig);
+        ok_ = ncsServer_->addPeer(peer).ok() && deviceServer_->addPeer(peer).ok() &&
+              ncsServer_->start().ok() && deviceServer_->start().ok();
+        if (!ok_) {
+            return;
+        }
+        const auto dial = [&](const Ws40Server& target, std::vector<Channel> open) {
+            ClientConfig config;
+            config.endpointUrl =
+                "ws://127.0.0.1:" + std::to_string(target.port()) + "/mos/Communication";
+            config.mosID = kMosID;
+            config.ncsID = kNcsID;
+            config.channels = std::move(open);
+            config.passive = false;  // standard mode
+            config.wireEncoding = encoding;
+            return std::make_unique<Ws40Client>(config, &clock);
+        };
+        std::vector<Channel> deviceDials;
+        for (const Channel channel : channels_) {
+            if (channel != Channel::Aux) {
+                deviceDials.push_back(channel);
+            }
+        }
+        deviceClient_ = dial(*ncsServer_, deviceDials);
+        ncsClient_ = dial(*deviceServer_, channels_);
+        deviceEndpoint_ = std::make_unique<Ws40Endpoint>(
+            deviceClient_.get(), &deviceServer_->transportFor(kMosID, kNcsID));
+        ncsEndpoint_ = std::make_unique<Ws40Endpoint>(ncsClient_.get(),
+                                                      &ncsServer_->transportFor(kMosID, kNcsID));
+    }
+
+    [[nodiscard]] bool ok() const { return ok_; }
+    [[nodiscard]] ITransport& deviceTransport() { return *deviceEndpoint_; }
+    [[nodiscard]] ITransport& ncsTransport() { return *ncsEndpoint_; }
+
+    [[nodiscard]] bool start() { return deviceClient_->start().ok() && ncsClient_->start().ok(); }
+    void stop() {
+        deviceClient_->stop();
+        ncsClient_->stop();
+    }
+
+    /// One transport turn for both roles, delivered through the facades.
+    template <typename DeviceFacade, typename NcsFacade>
+    void pump(DeviceFacade& device, NcsFacade& ncs) {
+        pumpSide(*deviceEndpoint_, *deviceServer_, device);
+        pumpSide(*ncsEndpoint_, *ncsServer_, ncs);
+    }
+
+    /// Both directions of one channel are up: the NCS's connection to the
+    /// device and (except on aux) the device's connection to the NCS, each
+    /// seen from both ends.
+    [[nodiscard]] bool linked(Channel channel) const {
+        const bool ncsToDevice = ncsClient_->isConnected(channel) &&
+                                 deviceServer_->transportFor(kMosID, kNcsID).isConnected(channel);
+        if (channel == Channel::Aux) {
+            return ncsToDevice;
+        }
+        return ncsToDevice && deviceClient_->isConnected(channel) &&
+               ncsServer_->transportFor(kMosID, kNcsID).isConnected(channel);
+    }
+
+private:
+    template <typename Facade>
+    static void pumpSide(Ws40Endpoint& endpoint, Ws40Server& server, Facade& facade) {
+        imos::transports::ws40::ChannelEventSink sink;
+        sink.connected = [&facade](Channel channel) { facade.onChannelConnected(channel); };
+        sink.disconnected = [&facade](Channel channel) { facade.onChannelDisconnected(channel); };
+        sink.frame = [&facade](Channel channel, std::span<const std::uint8_t> frame) {
+            facade.onFrameReceived(channel, frame);
+        };
+        endpoint.pump(sink);
+        while (auto event = server.nextEvent()) {
+            (void)endpoint.onServerEvent(*event, sink);
+        }
+    }
+
+    std::vector<Channel> channels_;
+    bool ok_ = false;
+    std::unique_ptr<Ws40Server> ncsServer_;
+    std::unique_ptr<Ws40Server> deviceServer_;
+    std::unique_ptr<Ws40Client> deviceClient_;
+    std::unique_ptr<Ws40Client> ncsClient_;
+    std::unique_ptr<Ws40Endpoint> deviceEndpoint_;
+    std::unique_ptr<Ws40Endpoint> ncsEndpoint_;
+};
+
 int countOf(const std::vector<MessageType>& types, MessageType type) {
     return static_cast<int>(std::count(types.begin(), types.end(), type));
 }
@@ -482,7 +585,7 @@ TEST(Ws40Transport, FrameTypeMismatchIsSurfacedNotDelivered) {
     // surfaces the misconfiguration instead of guessing.
     Rig rig;
     rig.startServer(WireEncoding::Ucs2Be);
-    rig.startClient({Channel::Ro}, /*passive=*/true, WireEncoding::Utf8);
+    rig.startClient({Channel::Ro}, /*passive=*/false, WireEncoding::Utf8);
     ASSERT_TRUE(rig.waitForConnected(Channel::Ro));
 
     ASSERT_TRUE(rig.deviceSession->enqueue(Channel::Ro, makeReqMachInfo()).ok());
@@ -491,9 +594,19 @@ TEST(Ws40Transport, FrameTypeMismatchIsSurfacedNotDelivered) {
     EXPECT_NE(rig.serverProtocolErrors[0].diagnostic.find("§3.4"), std::string::npos);
     EXPECT_TRUE(rig.ncsEvents.empty());  // never reached the session
 
-    // And the reverse: the NCS replies in its configured binary UCS-2; the
-    // UTF-8-configured client must flag rather than mis-decode it.
-    ASSERT_TRUE(rig.ncsSession->enqueue(Channel::Ro, makeReqMachInfo()).ok());
+    // And the reverse: the NCS answers in its configured binary UCS-2; the
+    // UTF-8-configured client must flag rather than mis-decode it. This is
+    // a standard-mode connection, so the NCS may only answer on it — the
+    // response is put on the wire directly, since the mismatched request
+    // above never reached the session that would have produced one.
+    Message answer = makeMessage(MessageType::ListMachInfo);
+    answer.setMosID(kMosID);
+    answer.setNcsID(kNcsID);
+    answer.setMessageID("1");
+    const auto wire =
+        imos::encoding::encodeFromUtf8(imos::codec::serializeMessage(answer), {});  // UCS-2 BE
+    ASSERT_TRUE(wire.ok());
+    ASSERT_TRUE(rig.server->transportFor(kMosID, kNcsID).sendReply(Channel::Ro, wire.value()).ok());
     ASSERT_TRUE(rig.waitFor([&] { return !rig.clientProtocolErrors.empty(); }));
     EXPECT_NE(rig.clientProtocolErrors[0].find("binary"), std::string::npos);
 }
@@ -690,58 +803,24 @@ TEST(Ws40Transport, Profile1ObjectWorkflowOverWebSocket) {
     imos::InMemoryMessageStore deviceStore;
     imos::InMemoryMessageStore ncsStore;
 
-    // NCS role on the server side.
-    ServerConfig serverConfig;
-    serverConfig.host = "127.0.0.1";  // port stays 0 → ephemeral
-    Ws40Server server{serverConfig};
-    ServerPeerConfig peer;
-    peer.mosID = kMosID;
-    peer.ncsID = kNcsID;
-    ASSERT_TRUE(server.addPeer(peer).ok());
-    ASSERT_TRUE(server.start().ok());
-    serverConfig.port = server.port();
-    incs::Ncs ncs{
-        {sessionConfig(), machineInfo(DeviceType::Ncs)},
-        PeerSession::Dependencies{&clock, &server.transportFor(kMosID, kNcsID), &ncsStore}};
+    // Standard mode: both roles listen and dial; no passive=true anywhere.
+    StandardLink link{clock, {Channel::Mom}};
+    ASSERT_TRUE(link.ok());
+    incs::Ncs ncs{{sessionConfig(), machineInfo(DeviceType::Ncs)},
+                  PeerSession::Dependencies{&clock, &link.ncsTransport(), &ncsStore}};
 
-    // Device role on the client side, with a small object catalog.
-    ClientConfig clientConfig;
-    clientConfig.endpointUrl =
-        "ws://127.0.0.1:" + std::to_string(serverConfig.port) + "/mos/Communication";
-    clientConfig.mosID = kMosID;
-    clientConfig.ncsID = kNcsID;
-    clientConfig.channels = {Channel::Mom};
-    // One side dials: that is passive mode — the NCS originates back down
-    // these connections only because the URL says passive=true.
-    clientConfig.passive = true;
-    Ws40Client client{clientConfig, &clock};
     imos::Device device{{sessionConfig(), machineInfo(DeviceType::Mos)},
-                        PeerSession::Dependencies{&clock, &client, &deviceStore}};
+                        PeerSession::Dependencies{&clock, &link.deviceTransport(), &deviceStore}};
     VectorObjectSource source;
     source.put("W2", makeObject("W2", "UPDATED"));
     source.put("W3", makeObject("W3", "UPDATED"));
     device.attach(source);
-    ASSERT_TRUE(client.start().ok());
+    ASSERT_TRUE(link.start());
 
     std::vector<imos::profiles::DirectoryEvent> dirEvents;
     const auto pump = [&] {
-        client.pump(device.session());
+        link.pump(device, ncs);
         device.poll();
-        while (auto event = server.nextEvent()) {
-            switch (event->kind) {
-                case ServerEvent::Kind::ChannelConnected:
-                    ncs.onChannelConnected(event->channel);
-                    break;
-                case ServerEvent::Kind::ChannelDisconnected:
-                    ncs.onChannelDisconnected(event->channel);
-                    break;
-                case ServerEvent::Kind::Frame:
-                    ncs.onFrameReceived(event->channel, event->frame);
-                    break;
-                default:
-                    break;
-            }
-        }
         ncs.poll();
         while (auto directoryEvent = ncs.nextDirectoryEvent()) {
             dirEvents.push_back(std::move(*directoryEvent));
@@ -759,7 +838,7 @@ TEST(Ws40Transport, Profile1ObjectWorkflowOverWebSocket) {
         return false;
     };
 
-    ASSERT_TRUE(waitFor([&] { return client.isConnected(Channel::Mom); }));
+    ASSERT_TRUE(waitFor([&] { return link.linked(Channel::Mom); }));
 
     // Push: an unsolicited object announcement is mirrored and acked.
     ASSERT_TRUE(device.announceObject(makeObject("P1", "NEW")).ok());
@@ -786,7 +865,7 @@ TEST(Ws40Transport, Profile1ObjectWorkflowOverWebSocket) {
     ASSERT_TRUE(ncs.requestAll(0).ok());
     ASSERT_TRUE(waitFor([&] { return ncs.object("W3") != nullptr; }));
 
-    client.stop();
+    link.stop();
 }
 
 // ---- Profile 2 running-order workflow over the real WebSocket transport ----
@@ -801,52 +880,20 @@ TEST(Ws40Transport, Profile2RunningOrderWorkflowOverWebSocket) {
     imos::InMemoryMessageStore deviceStore;
     imos::InMemoryMessageStore ncsStore;
 
-    ServerConfig serverConfig;
-    serverConfig.host = "127.0.0.1";  // port stays 0 → ephemeral
-    Ws40Server server{serverConfig};
-    ServerPeerConfig peer;
-    peer.mosID = kMosID;
-    peer.ncsID = kNcsID;
-    ASSERT_TRUE(server.addPeer(peer).ok());
-    ASSERT_TRUE(server.start().ok());
-    serverConfig.port = server.port();
-    incs::Ncs ncs{
-        {sessionConfig(), machineInfo(DeviceType::Ncs)},
-        PeerSession::Dependencies{&clock, &server.transportFor(kMosID, kNcsID), &ncsStore}};
+    // Standard mode: both roles listen and dial; no passive=true anywhere.
+    StandardLink link{clock, {Channel::Ro}};
+    ASSERT_TRUE(link.ok());
+    incs::Ncs ncs{{sessionConfig(), machineInfo(DeviceType::Ncs)},
+                  PeerSession::Dependencies{&clock, &link.ncsTransport(), &ncsStore}};
 
-    ClientConfig clientConfig;
-    clientConfig.endpointUrl =
-        "ws://127.0.0.1:" + std::to_string(serverConfig.port) + "/mos/Communication";
-    clientConfig.mosID = kMosID;
-    clientConfig.ncsID = kNcsID;
-    clientConfig.channels = {Channel::Ro};
-    // One side dials: that is passive mode — the NCS originates back down
-    // these connections only because the URL says passive=true.
-    clientConfig.passive = true;
-    Ws40Client client{clientConfig, &clock};
     imos::Device device{{sessionConfig(), machineInfo(DeviceType::Mos)},
-                        PeerSession::Dependencies{&clock, &client, &deviceStore}};
-    ASSERT_TRUE(client.start().ok());
+                        PeerSession::Dependencies{&clock, &link.deviceTransport(), &deviceStore}};
+    ASSERT_TRUE(link.start());
 
     std::vector<imos::profiles::ElementStatusReport> statuses;
     const auto pump = [&] {
-        client.pump(device.session());
+        link.pump(device, ncs);
         device.poll();
-        while (auto event = server.nextEvent()) {
-            switch (event->kind) {
-                case ServerEvent::Kind::ChannelConnected:
-                    ncs.onChannelConnected(event->channel);
-                    break;
-                case ServerEvent::Kind::ChannelDisconnected:
-                    ncs.onChannelDisconnected(event->channel);
-                    break;
-                case ServerEvent::Kind::Frame:
-                    ncs.onFrameReceived(event->channel, event->frame);
-                    break;
-                default:
-                    break;
-            }
-        }
         ncs.poll();
         while (auto status = ncs.nextElementStatus()) {
             statuses.push_back(std::move(*status));
@@ -864,7 +911,7 @@ TEST(Ws40Transport, Profile2RunningOrderWorkflowOverWebSocket) {
         return false;
     };
 
-    ASSERT_TRUE(waitFor([&] { return client.isConnected(Channel::Ro); }));
+    ASSERT_TRUE(waitFor([&] { return link.linked(Channel::Ro); }));
 
     // Author and commit; the device's shadow model converges over the wire.
     ASSERT_TRUE(ncs.author().create("WS-RO", "WS Rundown").ok());
@@ -896,7 +943,7 @@ TEST(Ws40Transport, Profile2RunningOrderWorkflowOverWebSocket) {
     EXPECT_EQ(statuses.front().status, "PLAY");
     EXPECT_EQ(statuses.front().itemID, "i1");
 
-    client.stop();
+    link.stop();
 }
 
 // ---- Profile 4 over real sockets (plan §13 M4 exit criterion) -------------
@@ -930,55 +977,22 @@ TEST(Ws40Transport, Profile4AgencyPayloadPreservedOverWebSocketBothEncodings) {
         imos::InMemoryMessageStore deviceStore;
         imos::InMemoryMessageStore ncsStore;
 
-        ServerConfig serverConfig;
-        serverConfig.host = "127.0.0.1";  // port stays 0 → ephemeral
-        Ws40Server server{serverConfig};
-        ServerPeerConfig peer;
-        peer.mosID = kMosID;
-        peer.ncsID = kNcsID;
-        peer.wireEncoding = encoding;
-        ASSERT_TRUE(server.addPeer(peer).ok());
-        ASSERT_TRUE(server.start().ok());
-        serverConfig.port = server.port();
-        incs::Ncs ncs{
-            {sessionConfig(encoding), machineInfo(DeviceType::Ncs)},
-            PeerSession::Dependencies{&clock, &server.transportFor(kMosID, kNcsID), &ncsStore}};
+        // Standard mode: both roles listen and dial; no passive=true anywhere.
+        StandardLink link{clock, {Channel::Ro}, encoding};
+        ASSERT_TRUE(link.ok());
+        incs::Ncs ncs{{sessionConfig(encoding), machineInfo(DeviceType::Ncs)},
+                      PeerSession::Dependencies{&clock, &link.ncsTransport(), &ncsStore}};
 
-        ClientConfig clientConfig;
-        clientConfig.endpointUrl =
-            "ws://127.0.0.1:" + std::to_string(serverConfig.port) + "/mos/Communication";
-        clientConfig.mosID = kMosID;
-        clientConfig.ncsID = kNcsID;
-        clientConfig.channels = {Channel::Ro};
-        // One side dials: that is passive mode — the NCS originates back down
-        // these connections only because the URL says passive=true.
-        clientConfig.passive = true;
-        clientConfig.wireEncoding = encoding;
-        Ws40Client client{clientConfig, &clock};
-        imos::Device device{{sessionConfig(encoding), machineInfo(DeviceType::Mos)},
-                            PeerSession::Dependencies{&clock, &client, &deviceStore}};
+        imos::Device device{
+            {sessionConfig(encoding), machineInfo(DeviceType::Mos)},
+            PeerSession::Dependencies{&clock, &link.deviceTransport(), &deviceStore}};
         CapturingStorySink sink;
         device.attach(sink);
-        ASSERT_TRUE(client.start().ok());
+        ASSERT_TRUE(link.start());
 
         const auto pump = [&] {
-            client.pump(device.session());
+            link.pump(device, ncs);
             device.poll();
-            while (auto event = server.nextEvent()) {
-                switch (event->kind) {
-                    case ServerEvent::Kind::ChannelConnected:
-                        ncs.onChannelConnected(event->channel);
-                        break;
-                    case ServerEvent::Kind::ChannelDisconnected:
-                        ncs.onChannelDisconnected(event->channel);
-                        break;
-                    case ServerEvent::Kind::Frame:
-                        ncs.onFrameReceived(event->channel, event->frame);
-                        break;
-                    default:
-                        break;
-                }
-            }
             ncs.poll();
         };
         const auto waitFor = [&](const std::function<bool()>& predicate) {
@@ -994,7 +1008,7 @@ TEST(Ws40Transport, Profile4AgencyPayloadPreservedOverWebSocketBothEncodings) {
             return false;
         };
 
-        ASSERT_TRUE(waitFor([&] { return client.isConnected(Channel::Ro); }));
+        ASSERT_TRUE(waitFor([&] { return link.linked(Channel::Ro); }));
 
         ASSERT_TRUE(ncs.author().create("WS-RO4", "WS Rundown").ok());
         ASSERT_TRUE(
@@ -1028,7 +1042,7 @@ TEST(Ws40Transport, Profile4AgencyPayloadPreservedOverWebSocketBothEncodings) {
         ASSERT_TRUE(waitFor([&] { return !sink.agencyBytes.empty(); }));
         EXPECT_EQ(sink.agencyBytes.front(), authoredBytes);
 
-        client.stop();
+        link.stop();
     }
 }
 
@@ -1061,53 +1075,21 @@ TEST(Ws40Transport, Profile5ItemControlOverWebSocket) {
     imos::InMemoryMessageStore deviceStore;
     imos::InMemoryMessageStore ncsStore;
 
-    ServerConfig serverConfig;
-    serverConfig.host = "127.0.0.1";  // port stays 0 → ephemeral
-    Ws40Server server{serverConfig};
-    ServerPeerConfig peer;
-    peer.mosID = kMosID;
-    peer.ncsID = kNcsID;
-    ASSERT_TRUE(server.addPeer(peer).ok());
-    ASSERT_TRUE(server.start().ok());
-    serverConfig.port = server.port();
-    incs::Ncs ncs{
-        {sessionConfig(), machineInfo(DeviceType::Ncs)},
-        PeerSession::Dependencies{&clock, &server.transportFor(kMosID, kNcsID), &ncsStore}};
+    // Standard mode: both roles listen and dial; no passive=true anywhere.
+    StandardLink link{clock, {Channel::Ro}};
+    ASSERT_TRUE(link.ok());
+    incs::Ncs ncs{{sessionConfig(), machineInfo(DeviceType::Ncs)},
+                  PeerSession::Dependencies{&clock, &link.ncsTransport(), &ncsStore}};
 
-    ClientConfig clientConfig;
-    clientConfig.endpointUrl =
-        "ws://127.0.0.1:" + std::to_string(serverConfig.port) + "/mos/Communication";
-    clientConfig.mosID = kMosID;
-    clientConfig.ncsID = kNcsID;
-    clientConfig.channels = {Channel::Ro};
-    // One side dials: that is passive mode — the NCS originates back down
-    // these connections only because the URL says passive=true.
-    clientConfig.passive = true;
-    Ws40Client client{clientConfig, &clock};
     imos::Device device{{sessionConfig(), machineInfo(DeviceType::Mos)},
-                        PeerSession::Dependencies{&clock, &client, &deviceStore}};
+                        PeerSession::Dependencies{&clock, &link.deviceTransport(), &deviceStore}};
     CapturingControlSink sink;
     device.attach(sink);
-    ASSERT_TRUE(client.start().ok());
+    ASSERT_TRUE(link.start());
 
     const auto pump = [&] {
-        client.pump(device.session());
+        link.pump(device, ncs);
         device.poll();
-        while (auto event = server.nextEvent()) {
-            switch (event->kind) {
-                case ServerEvent::Kind::ChannelConnected:
-                    ncs.onChannelConnected(event->channel);
-                    break;
-                case ServerEvent::Kind::ChannelDisconnected:
-                    ncs.onChannelDisconnected(event->channel);
-                    break;
-                case ServerEvent::Kind::Frame:
-                    ncs.onFrameReceived(event->channel, event->frame);
-                    break;
-                default:
-                    break;
-            }
-        }
         ncs.poll();
     };
     const auto waitFor = [&](const std::function<bool()>& predicate) {
@@ -1122,7 +1104,7 @@ TEST(Ws40Transport, Profile5ItemControlOverWebSocket) {
         return false;
     };
 
-    ASSERT_TRUE(waitFor([&] { return client.isConnected(Channel::Ro); }));
+    ASSERT_TRUE(waitFor([&] { return link.linked(Channel::Ro); }));
 
     // Converge one RO with an item so every scope level has a target.
     ASSERT_TRUE(ncs.author().create("WS-RO5", "WS Rundown").ok());
@@ -1158,7 +1140,7 @@ TEST(Ws40Transport, Profile5ItemControlOverWebSocket) {
     EXPECT_EQ(received->roEventType, "PLAY");
     EXPECT_EQ(received->itemID, "i1");
 
-    client.stop();
+    link.stop();
 }
 
 // ---- WASM client smoke (plan §13 M2: "P0 conformance … + WASM client") ----
@@ -1482,56 +1464,24 @@ TEST(Ws40Transport, Profile3ThreeChannelWorkflowOverWebSocket) {
     imos::InMemoryMessageStore deviceStore;
     imos::InMemoryMessageStore ncsStore;
 
-    ServerConfig serverConfig;
-    serverConfig.host = "127.0.0.1";  // port stays 0 → ephemeral
-    Ws40Server server{serverConfig};
-    ServerPeerConfig peer;
-    peer.mosID = kMosID;
-    peer.ncsID = kNcsID;
-    ASSERT_TRUE(server.addPeer(peer).ok());
-    ASSERT_TRUE(server.start().ok());
-    serverConfig.port = server.port();
-    incs::Ncs ncs{
-        {sessionConfig(), machineInfo(DeviceType::Ncs)},
-        PeerSession::Dependencies{&clock, &server.transportFor(kMosID, kNcsID), &ncsStore}};
+    // Standard mode: both roles listen and dial; no passive=true anywhere.
+    StandardLink link{clock, {Channel::Mom, Channel::Ro, Channel::Aux}};
+    ASSERT_TRUE(link.ok());
+    incs::Ncs ncs{{sessionConfig(), machineInfo(DeviceType::Ncs)},
+                  PeerSession::Dependencies{&clock, &link.ncsTransport(), &ncsStore}};
 
-    ClientConfig clientConfig;
-    clientConfig.endpointUrl =
-        "ws://127.0.0.1:" + std::to_string(serverConfig.port) + "/mos/Communication";
-    clientConfig.mosID = kMosID;
-    clientConfig.ncsID = kNcsID;
-    clientConfig.channels = {Channel::Mom, Channel::Ro, Channel::Aux};
-    // One side dials: that is passive mode — the NCS originates back down
-    // these connections only because the URL says passive=true.
-    clientConfig.passive = true;
-    Ws40Client client{clientConfig, &clock};
     imos::Device device{{sessionConfig(), machineInfo(DeviceType::Mos)},
-                        PeerSession::Dependencies{&clock, &client, &deviceStore}};
+                        PeerSession::Dependencies{&clock, &link.deviceTransport(), &deviceStore}};
     AdvancedVectorSource source;
     source.put("W1", makeObject("W1", "UPDATED"));
     device.attach(source);
-    ASSERT_TRUE(client.start().ok());
+    ASSERT_TRUE(link.start());
 
     std::vector<imos::profiles::DirectoryEvent> dirEvents;
     std::vector<imos::profiles::DirectoryQueryPage> pages;
     const auto pump = [&] {
-        client.pump(device.session());
+        link.pump(device, ncs);
         device.poll();
-        while (auto event = server.nextEvent()) {
-            switch (event->kind) {
-                case ServerEvent::Kind::ChannelConnected:
-                    ncs.onChannelConnected(event->channel);
-                    break;
-                case ServerEvent::Kind::ChannelDisconnected:
-                    ncs.onChannelDisconnected(event->channel);
-                    break;
-                case ServerEvent::Kind::Frame:
-                    ncs.onFrameReceived(event->channel, event->frame);
-                    break;
-                default:
-                    break;
-            }
-        }
         ncs.poll();
         while (auto directoryEvent = ncs.nextDirectoryEvent()) {
             dirEvents.push_back(std::move(*directoryEvent));
@@ -1553,8 +1503,7 @@ TEST(Ws40Transport, Profile3ThreeChannelWorkflowOverWebSocket) {
     };
 
     ASSERT_TRUE(waitFor([&] {
-        return client.isConnected(Channel::Mom) && client.isConnected(Channel::Ro) &&
-               client.isConnected(Channel::Aux);
+        return link.linked(Channel::Mom) && link.linked(Channel::Ro) && link.linked(Channel::Aux);
     }));
 
     // Fire one exchange per channel before any completes: mom fetch, ro
@@ -1581,16 +1530,18 @@ TEST(Ws40Transport, Profile3ThreeChannelWorkflowOverWebSocket) {
     // Placeholder create end-to-end: ACK carries the objID, the push follows.
     ASSERT_TRUE(
         ncs.createObject(imos::profiles::makeMosObjCreate("WS Fire", "VIDEO", "59.94")).ok());
-    ASSERT_TRUE(waitFor([&] { return ncs.object("WSOBJ-1") != nullptr; }));
-    bool sawCreated = false;
-    for (const auto& event : dirEvents) {
-        sawCreated =
-            sawCreated || (event.type == imos::profiles::DirectoryEventType::ObjectCreated &&
-                           event.objID == "WSOBJ-1");
-    }
-    EXPECT_TRUE(sawCreated);
+    // In standard mode the two travel on different connections — the ACK
+    // back down the NCS's, the push on the device's own — so either may
+    // land first; both must.
+    const auto sawCreated = [&] {
+        return std::any_of(dirEvents.begin(), dirEvents.end(), [](const auto& event) {
+            return event.type == imos::profiles::DirectoryEventType::ObjectCreated &&
+                   event.objID == "WSOBJ-1";
+        });
+    };
+    ASSERT_TRUE(waitFor([&] { return ncs.object("WSOBJ-1") != nullptr && sawCreated(); }));
 
-    client.stop();
+    link.stop();
 }
 
 // ---- Profile 7 over real sockets (plan §13 M4) -----------------------------
@@ -1606,51 +1557,19 @@ TEST(Ws40Transport, Profile7StoryActionOverWebSocket) {
     imos::InMemoryMessageStore deviceStore;
     imos::InMemoryMessageStore ncsStore;
 
-    ServerConfig serverConfig;
-    serverConfig.host = "127.0.0.1";  // port stays 0 → ephemeral
-    Ws40Server server{serverConfig};
-    ServerPeerConfig peer;
-    peer.mosID = kMosID;
-    peer.ncsID = kNcsID;
-    ASSERT_TRUE(server.addPeer(peer).ok());
-    ASSERT_TRUE(server.start().ok());
-    serverConfig.port = server.port();
-    incs::Ncs ncs{
-        {sessionConfig(), machineInfo(DeviceType::Ncs)},
-        PeerSession::Dependencies{&clock, &server.transportFor(kMosID, kNcsID), &ncsStore}};
+    // Standard mode: both roles listen and dial; no passive=true anywhere.
+    StandardLink link{clock, {Channel::Ro}};
+    ASSERT_TRUE(link.ok());
+    incs::Ncs ncs{{sessionConfig(), machineInfo(DeviceType::Ncs)},
+                  PeerSession::Dependencies{&clock, &link.ncsTransport(), &ncsStore}};
 
-    ClientConfig clientConfig;
-    clientConfig.endpointUrl =
-        "ws://127.0.0.1:" + std::to_string(serverConfig.port) + "/mos/Communication";
-    clientConfig.mosID = kMosID;
-    clientConfig.ncsID = kNcsID;
-    clientConfig.channels = {Channel::Ro};
-    // One side dials: that is passive mode — the NCS originates back down
-    // these connections only because the URL says passive=true.
-    clientConfig.passive = true;
-    Ws40Client client{clientConfig, &clock};
     imos::Device device{{sessionConfig(), machineInfo(DeviceType::Mos)},
-                        PeerSession::Dependencies{&clock, &client, &deviceStore}};
-    ASSERT_TRUE(client.start().ok());
+                        PeerSession::Dependencies{&clock, &link.deviceTransport(), &deviceStore}};
+    ASSERT_TRUE(link.start());
 
     const auto pump = [&] {
-        client.pump(device.session());
+        link.pump(device, ncs);
         device.poll();
-        while (auto event = server.nextEvent()) {
-            switch (event->kind) {
-                case ServerEvent::Kind::ChannelConnected:
-                    ncs.onChannelConnected(event->channel);
-                    break;
-                case ServerEvent::Kind::ChannelDisconnected:
-                    ncs.onChannelDisconnected(event->channel);
-                    break;
-                case ServerEvent::Kind::Frame:
-                    ncs.onFrameReceived(event->channel, event->frame);
-                    break;
-                default:
-                    break;
-            }
-        }
         ncs.poll();
     };
     const auto waitFor = [&](const std::function<bool()>& predicate) {
@@ -1665,7 +1584,7 @@ TEST(Ws40Transport, Profile7StoryActionOverWebSocket) {
         return false;
     };
 
-    ASSERT_TRUE(waitFor([&] { return client.isConnected(Channel::Ro); }));
+    ASSERT_TRUE(waitFor([&] { return link.linked(Channel::Ro); }));
 
     ASSERT_TRUE(ncs.author().create("WS-RO7", "WS Rundown").ok());
     ASSERT_TRUE(ncs.author().commit("WS-RO7").ok());
@@ -1690,5 +1609,5 @@ TEST(Ws40Transport, Profile7StoryActionOverWebSocket) {
         return device.runningOrderModel().storyIDs("WS-RO7") == std::vector<std::string>{"s7"};
     }));
 
-    client.stop();
+    link.stop();
 }

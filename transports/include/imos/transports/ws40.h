@@ -323,10 +323,19 @@ public:
     /// kinds it does not consume (ProtocolError, Rejected).
     bool onServerEvent(const ServerEvent& event, PeerSession& session);
 
+    /// The same two entry points delivering to a sink instead — for hosts
+    /// that feed a role facade (imos::Device / incs::Ncs), whose
+    /// onChannelConnected / onFrameReceived run facade-level hooks the bare
+    /// session does not. The sink sees the merged channel view: connected
+    /// when the first of the two connections comes up, disconnected when
+    /// the last goes down.
+    void pump(const ChannelEventSink& sink);
+    bool onServerEvent(const ServerEvent& event, const ChannelEventSink& sink);
+
     [[nodiscard]] std::optional<MonotonicTime> nextDeadline() const;
 
 private:
-    void linkChanged(Channel channel, bool dialedSide, bool up, PeerSession& session);
+    void linkChanged(Channel channel, bool dialedSide, bool up, const ChannelEventSink& sink);
 
     Ws40Client* dialed_;
     ITransport* accepted_;

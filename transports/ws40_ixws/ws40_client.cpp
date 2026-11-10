@@ -180,7 +180,12 @@ void Ws40Client::stop() {
 
 Result<void> Ws40Client::send(Channel channel, std::span<const std::uint8_t> frame) {
     Impl::ChannelSlot& slot = impl_->slot(channel);
-    if (slot.socket == nullptr || slot.socket->getReadyState() != ix::ReadyState::Open) {
+    // "Open" on the socket is not enough: IXWebSocket flips the ready state
+    // before its own thread has finished setting the connection up (the
+    // permessage-deflate state among it) and only then reports Open. Until
+    // pump() has seen that report, a send from here would race that setup.
+    if (slot.socket == nullptr || !slot.sessionConnected ||
+        slot.socket->getReadyState() != ix::ReadyState::Open) {
         return makeError(
             ErrorCode::IoError,
             std::string{"ws40 "} + std::string{channelName(channel)} + " channel is not connected");
