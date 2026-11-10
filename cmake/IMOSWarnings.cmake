@@ -37,6 +37,9 @@ if(IMOS_ENABLE_TSAN)
   target_link_options(imos_warnings INTERFACE -fsanitize=thread)
 endif()
 if(IMOS_ENABLE_COVERAGE)
-  target_compile_options(imos_warnings INTERFACE --coverage -O0 -g)
+  # Atomic counter updates: the transports call into core/ from their I/O
+  # threads, and racing plain increments corrupt the counts (gcov then
+  # reports negative hits, which gcovr rejects).
+  target_compile_options(imos_warnings INTERFACE --coverage -fprofile-update=atomic -O0 -g)
   target_link_options(imos_warnings INTERFACE --coverage)
 endif()
