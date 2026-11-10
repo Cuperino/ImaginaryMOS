@@ -105,7 +105,9 @@ bool Profile0Responder::handle(const SessionEvent& event) {
             if (event.message.type() == codec::MessageType::ReqMachInfo) {
                 codec::Message reply = buildListMachInfo(info_, clock_->wallClock());
                 codec::echoMessageID(event.message, reply);
-                (void)session_->enqueue(event.channel, std::move(reply));
+                // A terminal reply: it completes the peer's exchange and
+                // must not wait behind a request of our own in flight.
+                (void)session_->enqueueReply(event.channel, std::move(reply));
                 return true;
             }
             if (event.message.type() == codec::MessageType::ListMachInfo) {
@@ -118,6 +120,7 @@ bool Profile0Responder::handle(const SessionEvent& event) {
             return false;
         case SessionEventType::AckReceived:
             if (pendingReqMachInfo_ && event.seq == *pendingReqMachInfo_ &&
+                event.channel == pendingReqMachInfoChannel_ &&
                 event.message.type() == codec::MessageType::ListMachInfo) {
                 pendingReqMachInfo_.reset();
                 if (auto result = parseListMachInfo(event.message); result.ok()) {
@@ -138,6 +141,7 @@ Result<Seq> Profile0Responder::requestMachineInfo(Channel channel) {
         session_->enqueue(channel, codec::makeMessage(codec::MessageType::ReqMachInfo));
     if (seq.ok()) {
         pendingReqMachInfo_ = seq.value();
+        pendingReqMachInfoChannel_ = channel;
     }
     return seq;
 }

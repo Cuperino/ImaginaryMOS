@@ -27,6 +27,16 @@ public:
     /// bytes are already in the peer's configured wire encoding.
     virtual Result<void> send(Channel channel, std::span<const std::uint8_t> frame) = 0;
 
+    /// Send a frame that answers a message the peer originated (an ack, a
+    /// list reply, a heartbeat echo). Transports with one connection per
+    /// channel treat it exactly like send() — the default. The 2.8 TCP
+    /// transport holds up to two sockets per port (one each side dialed) and
+    /// must return a response "down the same socket on which the original
+    /// message was received", so it routes these differently.
+    virtual Result<void> sendReply(Channel channel, std::span<const std::uint8_t> frame) {
+        return send(channel, frame);
+    }
+
     [[nodiscard]] virtual bool isConnected(Channel channel) const = 0;
 };
 

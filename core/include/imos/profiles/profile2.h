@@ -158,6 +158,14 @@ public:
     /// True while a roReq/roList rebuild for this RO is outstanding.
     [[nodiscard]] bool resyncing(std::string_view roID) const;
 
+    /// True once the device has reported this RO (or one of its elements)
+    /// with a roElementStat status of "DISCONNECTED" — its list no longer
+    /// matches what the NCS sent (spec §2.3). While it holds, model mode
+    /// ACKs every construction message for the RO with roStatus
+    /// DISCONNECTED and applies none of them; requestRunningOrder() (the
+    /// roReq/roList rebuild) ends it.
+    [[nodiscard]] bool disconnected(std::string_view roID) const;
+
     /// True when construction messages route into the owned model (no raw
     /// sink attached) — i.e. this responder owns RO state and resync.
     [[nodiscard]] bool modelMode() const noexcept { return sink_ == nullptr; }
@@ -195,6 +203,7 @@ private:
     UnknownObjectPolicy objectPolicy_ = UnknownObjectPolicy::Accept;
     std::unordered_map<Seq, std::string> pendingResync_;  ///< roReq seq → roID
     std::set<std::string> resyncing_;
+    std::set<std::string> disconnected_;  ///< ROs reported DISCONNECTED, awaiting resync
     std::deque<ElementStatusReport> statusEvents_;
 };
 

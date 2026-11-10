@@ -335,7 +335,9 @@ bool Profile5NcsResponder::handle(const SessionEvent& event) {
             return true;
         }
         case SessionEventType::AckReceived: {
-            const auto it = pending_.find(event.seq);
+            // Store sequence numbers are per channel; ours are all ro.
+            const auto it =
+                event.channel == Channel::Ro ? pending_.find(event.seq) : pending_.end();
             if (it == pending_.end()) {
                 return false;
             }
@@ -348,7 +350,8 @@ bool Profile5NcsResponder::handle(const SessionEvent& event) {
             return true;
         }
         case SessionEventType::DeliveryFailed: {
-            const auto it = pending_.find(event.seq);
+            const auto it =
+                event.channel == Channel::Ro ? pending_.find(event.seq) : pending_.end();
             if (it == pending_.end()) {
                 return false;
             }

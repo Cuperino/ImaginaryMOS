@@ -281,6 +281,17 @@ void Profile2Responder::handleConstruction(const SessionEvent& event) {
         }
     }
 
+    // Spec §2.3 "Important Note": while the device's list no longer matches
+    // what the NCS sent, every "ro" message is ACKed with a status of
+    // DISCONNECTED and left unapplied — the roReq/roList resync is what
+    // brings the two back together.
+    if (sink_ == nullptr && disconnected_.contains(roID)) {
+        codec::Message ack = buildRoAck(roID, "DISCONNECTED");
+        codec::echoMessageID(message, ack);
+        (void)session_->enqueueReply(event.channel, std::move(ack));
+        return;
+    }
+
     if (sink_ != nullptr) {
         // Raw mode: the host owns state and resync; we only run the ack.
         Result<void> outcome = dispatchToSink(message);
@@ -386,6 +397,7 @@ void Profile2Responder::completeResync(const SessionEvent& event) {
     const std::string roID = it->second;
     pendingResync_.erase(it);
     resyncing_.erase(roID);
+    disconnected_.erase(roID);  // either way the local divergence is over
 
     if (event.message.type() == codec::MessageType::RoList) {
         // Rebuild wholesale; nothing is replayed (spec: rebuild, don't replay).
@@ -411,11 +423,18 @@ Result<Seq> Profile2Responder::sendElementStat(const ElementStatusReport& report
             return std::move(recorded).error();
         }
     }
+    if (report.status == "DISCONNECTED") {
+        disconnected_.insert(report.roID);  // until a resync rebuilds the RO
+    }
     ElementStatusReport stamped = report;
     if (stamped.time.empty()) {
         stamped.time = formatSpecTime(clock_->wallClock());
     }
     return session_->enqueue(buildRoElementStat(stamped));
+}
+
+bool Profile2Responder::disconnected(std::string_view roID) const {
+    return disconnected_.contains(std::string{roID});
 }
 
 std::optional<ElementStatusReport> Profile2Responder::nextStatus() {
@@ -456,7 +475,7 @@ bool Profile2NcsResponder::handle(const SessionEvent& event) {
                 // time on top of it. roList awaits no ack of its own, and
                 // the device acks the queued messages past its pending
                 // roReq, so the queue still drains.
-                (void)session_->enqueue(event.channel, std::move(*list));
+                (void)session_->enqueueOrderedReply(event.channel, std::move(*list));
             } else {
                 codec::Message ack = buildRoAck(roID, "NACK: unknown roID '" + roID + "'");
                 codec::echoMessageID(event.message, ack);

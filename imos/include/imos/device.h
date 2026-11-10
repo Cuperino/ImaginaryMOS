@@ -106,6 +106,14 @@ public:
     [[nodiscard]] profiles::RunningOrderModel& runningOrderModel() noexcept;
     [[nodiscard]] const profiles::RunningOrderModel& runningOrderModel() const noexcept;
 
+    /// Rebuild one RO from the NCS (roReq → roList). This is also how a
+    /// device that reported an RO "DISCONNECTED" through
+    /// reportElementStatus() — after which every construction message for
+    /// it is ACKed DISCONNECTED and left unapplied, per spec §2.3 —
+    /// recovers synchronization.
+    void resyncRunningOrder(std::string_view roID);
+    [[nodiscard]] bool runningOrderDisconnected(std::string_view roID) const;
+
     // Profile 4: RO enumeration, hydration, and the story store.
 
     /// Ask the NCS for every MOS-active RO (roReqAll → roListAll header

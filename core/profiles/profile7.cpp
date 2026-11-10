@@ -113,7 +113,7 @@ Result<Seq> Profile7Requester::requestStoryAction(const StoryActionRequest& requ
 }
 
 bool Profile7Requester::handle(const SessionEvent& event) {
-    if (event.type != SessionEventType::AckReceived ||
+    if (event.type != SessionEventType::AckReceived || event.channel != Channel::Ro ||
         event.message.type() != codec::MessageType::RoAck) {
         return false;
     }

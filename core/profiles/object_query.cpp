@@ -428,8 +428,18 @@ std::string operandString(const XPathOperand& operand, const std::string& contex
             return operand.text;
         case XPathOperand::Kind::Number: {
             // Minimal XPath-style number-to-string (integers without decimals).
+            // XPath string(): NaN, ±Infinity, integers without a decimal
+            // point. The integer cast is only defined in range, so the
+            // non-finite and out-of-range values are settled first.
             const double value = operand.number;
-            if (value == static_cast<double>(static_cast<long long>(value))) {
+            if (std::isnan(value)) {
+                return "NaN";
+            }
+            if (std::isinf(value)) {
+                return value > 0 ? "Infinity" : "-Infinity";
+            }
+            if (std::fabs(value) < 1e15 &&
+                value == static_cast<double>(static_cast<long long>(value))) {
                 return std::to_string(static_cast<long long>(value));
             }
             return std::to_string(value);

@@ -86,6 +86,17 @@ Result<bool> InMemoryMessageStore::seenInbound(const PeerId& peer, MessageIdView
     return it != inbound_.end() && it->second.seen.contains(messageId);
 }
 
+Result<std::uint64_t> InMemoryMessageStore::lastMessageId(const PeerId& peer) {
+    const auto it = messageIds_.find(peer);
+    return it == messageIds_.end() ? std::uint64_t{0} : it->second;
+}
+
+Result<void> InMemoryMessageStore::noteMessageId(const PeerId& peer, std::uint64_t messageId) {
+    std::uint64_t& stored = messageIds_[peer];
+    stored = messageId;
+    return {};
+}
+
 Result<void> InMemoryMessageStore::compact(StreamHandle handle) {
     return find(handle) != nullptr
                ? Result<void>{}

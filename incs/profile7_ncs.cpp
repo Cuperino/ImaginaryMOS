@@ -3,6 +3,7 @@
 
 #include <incs/profile7_ncs.h>
 
+#include <algorithm>
 #include <charconv>
 #include <utility>
 
@@ -145,6 +146,7 @@ bool Profile7NcsResponder::handle(const imos::SessionEvent& event) {
     }
 
     // Parse operation-specific payload
+    std::vector<imos::codec::XmlNode> newStories;  // NEW: every <story>, in order
     switch (action) {
         case imos::profiles::StoryAction::New: {
             if (const imos::codec::XmlNode* target =
@@ -155,7 +157,10 @@ bool Profile7NcsResponder::handle(const imos::SessionEvent& event) {
                     roStorySend->firstChildElement("element_source")) {
                 for (const imos::codec::XmlNode& child : source->children) {
                     if (child.isElement("story")) {
-                        req.story = child;
+                        if (!req.story.has_value()) {
+                            req.story = child;
+                        }
+                        newStories.push_back(child);
                     }
                 }
             }
@@ -244,7 +249,7 @@ bool Profile7NcsResponder::handle(const imos::SessionEvent& event) {
     std::string assignedStoryID;
     switch (action) {
         case imos::profiles::StoryAction::New: {
-            if (imos::Result<std::string> result = applyNew(req); result.ok()) {
+            if (imos::Result<std::string> result = applyNew(req, newStories); result.ok()) {
                 assignedStoryID = std::move(result).value();
             } else {
                 nackReason = result.error().message;
@@ -295,39 +300,62 @@ bool Profile7NcsResponder::handle(const imos::SessionEvent& event) {
 }
 
 imos::Result<std::string> Profile7NcsResponder::applyNew(
-    const imos::profiles::StoryActionRequest& req) {
-    if (!req.story.has_value()) {
+    const imos::profiles::StoryActionRequest& req,
+    const std::vector<imos::codec::XmlNode>& stories) {
+    if (stories.empty()) {
         return imos::makeError(imos::ErrorCode::InvalidArgument,
                                "NEW missing story in element_source");
     }
-
-    const imos::codec::XmlNode& story = *req.story;
-    // An empty storyID means the device asked the NCS to assign one.
-    std::string storyID = story.childText("storyID");
-    if (storyID.empty()) {
-        storyID = nextGeneratedStoryID(req.roID);
+    // Resolve every storyID first (an empty one asks the NCS to assign it)
+    // and refuse the whole request on a clash, so a NEW either inserts all
+    // of its stories or none.
+    std::vector<std::string> ids;
+    ids.reserve(stories.size());
+    for (const imos::codec::XmlNode& story : stories) {
+        std::string storyID = story.childText("storyID");
+        if (storyID.empty()) {
+            do {
+                storyID = nextGeneratedStoryID(req.roID);
+            } while (std::find(ids.begin(), ids.end(), storyID) != ids.end());
+        } else if (std::find(ids.begin(), ids.end(), storyID) != ids.end() ||
+                   author_->desired().story(req.roID, storyID) != nullptr) {
+            return imos::makeError(imos::ErrorCode::InvalidArgument,
+                                   "storyID '" + storyID + "' already exists");
+        }
+        ids.push_back(std::move(storyID));
     }
 
-    imos::codec::XmlNode builtStory = incs::RunningOrderAuthor::makeStory(
-        storyID, story.childText("storySlug"), story.childText("storyNum"));
-
-    if (imos::Result<void> result = author_->insertStory(req.roID, builtStory, req.beforeStoryID);
-        !result.ok()) {
-        return std::move(result).error();
-    }
-
-    if (const imos::codec::XmlNode* sb = story.firstChildElement("storyBody")) {
-        if (imos::Result<void> result = author_->setStoryBody(req.roID, storyID, *sb);
+    for (std::size_t i = 0; i < stories.size(); ++i) {
+        const imos::codec::XmlNode& story = stories[i];
+        // The running-order story is everything the MOS sent except the
+        // script: its items and metadata ride along; the body goes to the
+        // story-send store.
+        imos::codec::XmlNode builtStory = incs::RunningOrderAuthor::makeStory(
+            ids[i], story.childText("storySlug"), story.childText("storyNum"));
+        for (const imos::codec::XmlNode& child : story.children) {
+            if (child.kind == imos::codec::XmlNodeKind::Element && child.name != "storyID" &&
+                child.name != "storySlug" && child.name != "storyNum" &&
+                child.name != "storyBody") {
+                builtStory.children.push_back(child);
+            }
+        }
+        // Each lands before the same target, so they keep the order sent.
+        if (imos::Result<void> result =
+                author_->insertStory(req.roID, builtStory, req.beforeStoryID);
             !result.ok()) {
             return std::move(result).error();
         }
+        if (const imos::codec::XmlNode* sb = story.firstChildElement("storyBody")) {
+            if (imos::Result<void> result = author_->setStoryBody(req.roID, ids[i], *sb);
+                !result.ok()) {
+                return std::move(result).error();
+            }
+        }
     }
-
     if (imos::Result<std::vector<imos::Seq>> result = author_->commit(req.roID); !result.ok()) {
         return std::move(result).error();
     }
-
-    return storyID;
+    return ids.front();
 }
 
 imos::Result<void> Profile7NcsResponder::applyUpdate(
@@ -335,16 +363,54 @@ imos::Result<void> Profile7NcsResponder::applyUpdate(
     if (req.storyID.empty()) {
         return imos::makeError(imos::ErrorCode::InvalidArgument, "UPDATE missing storyID");
     }
-
     // UPDATE replaces the story with the header the MOS sent (slug/num carried
-    // verbatim), then its body.
+    // verbatim), then its body. The story's item references are not the
+    // MOS's to drop by omission: when the new script embeds <storyItem>
+    // references they define the story's items (an item the story already
+    // has keeps its full running-order form, a new reference becomes an
+    // item); a script that embeds none — plain text, or the agency form —
+    // leaves the existing items as they are.
     imos::codec::XmlNode builtStory =
         incs::RunningOrderAuthor::makeStory(req.storyID, req.storySlug, req.storyNum);
+    if (const imos::codec::XmlNode* current = author_->desired().story(req.roID, req.storyID)) {
+        std::vector<const imos::codec::XmlNode*> embedded;
+        if (req.storyBody.has_value()) {
+            for (const imos::codec::XmlNode& child : req.storyBody->children) {
+                if (child.isElement("storyItem")) {
+                    embedded.push_back(&child);
+                }
+            }
+        }
+        if (embedded.empty()) {
+            for (const imos::codec::XmlNode& child : current->children) {
+                if (child.isElement("item")) {
+                    builtStory.children.push_back(child);
+                }
+            }
+        } else {
+            for (const imos::codec::XmlNode* reference : embedded) {
+                const std::string itemID = reference->childText("itemID");
+                const imos::codec::XmlNode* existing = nullptr;
+                for (const imos::codec::XmlNode& child : current->children) {
+                    if (child.isElement("item") && child.childText("itemID") == itemID) {
+                        existing = &child;
+                        break;
+                    }
+                }
+                if (existing != nullptr) {
+                    builtStory.children.push_back(*existing);
+                } else {
+                    imos::codec::XmlNode item = *reference;
+                    item.name = "item";
+                    builtStory.children.push_back(std::move(item));
+                }
+            }
+        }
+    }
     if (imos::Result<void> result = author_->replaceStory(req.roID, req.storyID, builtStory);
         !result.ok()) {
         return std::move(result).error();
     }
-
     // The agency (Read1stMEMasBody) form carries an empty storyBody flagged
     // Read1stMEMasBody plus the mosExternalMetadata that *is* the body; a
     // literal-body UPDATE carries the script inline (any trailing

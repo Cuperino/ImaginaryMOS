@@ -559,8 +559,15 @@ void ObjectDirectory::completeQuery(const SessionEvent& event, const Outstanding
             }
         }
     }
+    // Spec §3.2.5: a null listReturnTotal is not zero — it "indicates
+    // generally more than one object has been found". With the total
+    // unknown, keep paging while pages come back full; a short (or empty)
+    // page is the end.
+    const bool totalKnown = !childText(event.message, "listReturnTotal").empty();
+    const bool pageFull =
+        resyncPaging_.pageSize > 0 && page.objIDs.size() >= resyncPaging_.pageSize;
     const bool morePages = request.resyncPage && resyncPaging_.active && page.listReturnEnd > 0 &&
-                           page.listReturnEnd < page.listReturnTotal;
+                           (totalKnown ? page.listReturnEnd < page.listReturnTotal : pageFull);
     pages_.push_back(std::move(page));
     if (!request.resyncPage) {
         return;

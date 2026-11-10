@@ -109,6 +109,11 @@ public:
     [[nodiscard]] const codec::Message* story(std::string_view roID,
                                               std::string_view storyID) const;
     [[nodiscard]] std::vector<std::string> storyIDs(std::string_view roID) const;
+    /// Drop every stored story whose RO or story has left the linked
+    /// Profile 2 model (spec §2.5: "once a story is deleted from the list
+    /// the receiving device may assume the body of the story is no longer
+    /// needed and delete it"). No-op without a model-mode Profile 2 link.
+    void pruneStories();
     /// Drop stored stories (all for an RO, or one story). No-op if absent.
     void eraseStories(std::string_view roID);
     void eraseStory(std::string_view roID, std::string_view storyID);

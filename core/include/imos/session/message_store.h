@@ -90,6 +90,22 @@ public:
     virtual Result<void> noteInbound(const PeerId& peer, MessageIdView messageId,
                                      Timestamp receivedAt) = 0;
     virtual Result<bool> seenInbound(const PeerId& peer, MessageIdView messageId) = 0;
+    /// The highest messageID this peer relationship has reserved for its own
+    /// requests, 0 when none is recorded. Spec §4.1.6: "the last used
+    /// messageID must be persistent" — a restarted session must not reuse
+    /// numbers the peer may still hold in its duplicate window. The defaults
+    /// (nothing recorded, recording is a no-op) keep a store that predates
+    /// this pair compiling; such a store simply does not persist the counter.
+    virtual Result<std::uint64_t> lastMessageId(const PeerId& peer) {
+        (void)peer;
+        return std::uint64_t{0};
+    }
+    virtual Result<void> noteMessageId(const PeerId& peer, std::uint64_t messageId) {
+        (void)peer;
+        (void)messageId;
+        return {};
+    }
+
     /// Drop acknowledged prefixes / prune the dedupe window.
     virtual Result<void> compact(StreamHandle stream) = 0;
     /// Flush buffered records to durable storage.

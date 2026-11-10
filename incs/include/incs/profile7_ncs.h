@@ -96,7 +96,11 @@ public:
     [[nodiscard]] std::optional<StoryActionAudit> nextAudit();
 
 private:
-    imos::Result<std::string> applyNew(const imos::profiles::StoryActionRequest& req);
+    /// Inserts every story of a NEW (spec §3.9.1: "one or more stories to be
+    /// inserted"), in order, before the request's target; returns the first
+    /// story's ID — the one the roAck carries in roStatus.
+    imos::Result<std::string> applyNew(const imos::profiles::StoryActionRequest& req,
+                                       const std::vector<imos::codec::XmlNode>& stories);
     imos::Result<void> applyUpdate(const imos::profiles::StoryActionRequest& req);
     imos::Result<void> applyDelete(const imos::profiles::StoryActionRequest& req);
     imos::Result<void> applyMove(const imos::profiles::StoryActionRequest& req);

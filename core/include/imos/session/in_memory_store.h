@@ -31,6 +31,8 @@ public:
     Result<void> noteInbound(const PeerId& peer, MessageIdView messageId,
                              Timestamp receivedAt) override;
     Result<bool> seenInbound(const PeerId& peer, MessageIdView messageId) override;
+    Result<std::uint64_t> lastMessageId(const PeerId& peer) override;
+    Result<void> noteMessageId(const PeerId& peer, std::uint64_t messageId) override;
     Result<void> compact(StreamHandle stream) override;
     Result<void> sync(StreamHandle stream) override;
 
@@ -50,6 +52,7 @@ private:
     std::size_t dedupeWindow_;
     std::vector<Stream> streams_;
     std::map<PeerId, Inbound> inbound_;
+    std::map<PeerId, std::uint64_t> messageIds_;
 };
 
 }  // namespace imos

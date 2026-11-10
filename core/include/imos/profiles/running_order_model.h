@@ -38,6 +38,17 @@ enum class RoElement : std::uint8_t { RunningOrder, Story, Item };
 [[nodiscard]] IMOS_CORE_API std::optional<RoElement> roElementFromName(
     std::string_view name) noexcept;
 
+/// The spec's metadata merge, shared by mosItemReplace (§3.3.2) and the
+/// mosObj "UPDATED" push (§2.2): every child element of `incoming` is folded
+/// into `target` — a tag the target already has is replaced in place, a new
+/// tag is appended, a tag present with a null value (no text, no child
+/// elements) removes the target's, and a <mosExternalMetadata> block
+/// replaces the first existing block with a matching <mosSchema> (else it
+/// is appended). Tags `incoming` leaves out stay intact. `keyName` is the
+/// identifying child (itemID / objID), which is never touched.
+IMOS_CORE_API void mergeElementFields(codec::XmlNode& target, const codec::XmlNode& incoming,
+                                      std::string_view keyName);
+
 /// Apply a mosItemReplace (Profile 3, spec §3.3.2) to one RO subtree: locate
 /// the story and the item keyed by the message's <itemID>, then merge the
 /// incoming <item> — tags present in the message replace the target's in

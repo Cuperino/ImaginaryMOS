@@ -9,6 +9,7 @@
 #include <utility>
 
 #include <imos/codec/gen/views.h>
+#include <imos/profiles/running_order_model.h>
 
 namespace imos::profiles {
 
@@ -278,6 +279,19 @@ void ObjectDirectory::ingest(codec::Message mosObj) {
         return;
     }
     pushEvent(DirectoryEvent{DirectoryEventType::ObjectUpdated, objID, ""});
+    // Spec §2.2: an "UPDATED" push carries only what changed — tags it
+    // leaves out stay intact on the mirrored object, and a tag sent with a
+    // null value is removed. Every other status (NEW, a list/resync entry)
+    // describes the object in full and replaces the mirror's copy.
+    const auto existing = objects_.find(objID);
+    if (existing != objects_.end() && childText(mosObj, "status") == "UPDATED") {
+        codec::XmlNode* target = existing->second.body();
+        const codec::XmlNode* incoming = mosObj.body();
+        if (target != nullptr && incoming != nullptr) {
+            mergeElementFields(*target, *incoming, "objID");
+            return;
+        }
+    }
     objects_.insert_or_assign(std::move(objID), std::move(mosObj));
 }
 

@@ -149,6 +149,14 @@ Result<Seq> Device::reportElementStatus(const profiles::ElementStatusReport& rep
     return profile2_.sendElementStat(report);
 }
 
+void Device::resyncRunningOrder(std::string_view roID) {
+    profile2_.requestRunningOrder(roID);
+}
+
+bool Device::runningOrderDisconnected(std::string_view roID) const {
+    return profile2_.disconnected(roID);
+}
+
 Result<Seq> Device::requestAllRunningOrders(bool hydrate) {
     return profile4_.requestAllRunningOrders(hydrate);
 }
@@ -213,9 +221,17 @@ std::optional<SessionEvent> Device::nextEvent() {
 
 void Device::dispatch() {
     while (std::optional<SessionEvent> event = session_.nextEvent()) {
-        if (profile0_.handle(*event) || profile1_.handle(*event) || profile2_.handle(*event) ||
-            profile3_.handle(*event) || profile4_.handle(*event) || profile5_.handle(*event) ||
-            profile7_.handle(*event)) {
+        if (profile0_.handle(*event) || profile1_.handle(*event)) {
+            continue;
+        }
+        if (profile2_.handle(*event) || profile3_.handle(*event)) {
+            // Both can change the running-order model (construction, a
+            // resync rebuild, a folded-in mosItemReplace); stories that left
+            // it take their stored bodies with them.
+            profile4_.pruneStories();
+            continue;
+        }
+        if (profile4_.handle(*event) || profile5_.handle(*event) || profile7_.handle(*event)) {
             continue;
         }
         appEvents_.push_back(std::move(*event));

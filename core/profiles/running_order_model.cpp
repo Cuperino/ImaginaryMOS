@@ -286,14 +286,20 @@ Result<void> applyMosItemReplace(codec::XmlNode& runningOrder, const codec::Mess
     }
 
     // Merge in place — the target item's position never changes.
-    for (const codec::XmlNode& field : incoming->children) {
-        if (field.kind != codec::XmlNodeKind::Element || field.name == "itemID") {
+    mergeElementFields(*target, *incoming, "itemID");
+    return {};
+}
+
+void mergeElementFields(codec::XmlNode& target, const codec::XmlNode& incoming,
+                        std::string_view keyName) {
+    for (const codec::XmlNode& field : incoming.children) {
+        if (field.kind != codec::XmlNodeKind::Element || field.name == keyName) {
             continue;
         }
         if (field.name == "mosExternalMetadata") {
             const std::string schema = field.childText("mosSchema");
             codec::XmlNode* block = nullptr;
-            for (codec::XmlNode& child : target->children) {
+            for (codec::XmlNode& child : target.children) {
                 if (child.isElement("mosExternalMetadata") &&
                     child.childText("mosSchema") == schema) {
                     block = &child;  // first matching-schema block only
@@ -303,28 +309,27 @@ Result<void> applyMosItemReplace(codec::XmlNode& runningOrder, const codec::Mess
             if (block != nullptr) {
                 *block = field;
             } else {
-                target->children.push_back(field);
+                target.children.push_back(field);
             }
             continue;
         }
-        codec::XmlNode* existing = target->firstChildElement(field.name);
+        codec::XmlNode* existing = target.firstChildElement(field.name);
         if (isNullValue(field)) {
             if (existing != nullptr) {  // null value removes the tag
-                const auto at = existing - target->children.data();
-                target->children.erase(target->children.begin() + at);
+                const auto at = existing - target.children.data();
+                target.children.erase(target.children.begin() + at);
             }
             continue;
         }
         if (existing != nullptr) {
             *existing = field;  // replace in place
         } else {
-            target->children.push_back(field);  // new tags append
+            target.children.push_back(field);  // new tags append
         }
     }
-    if (!target->children.empty()) {
-        target->emptyTag = false;
+    if (!target.children.empty()) {
+        target.emptyTag = false;
     }
-    return {};
 }
 
 std::string_view roElementName(RoElement element) noexcept {

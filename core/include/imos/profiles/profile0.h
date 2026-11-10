@@ -98,7 +98,8 @@ private:
     MachineInfo info_;
     PeerSession* session_;
     IClock* clock_;
-    std::optional<Seq> pendingReqMachInfo_;  ///< outstanding reqMachInfo seq
+    std::optional<Seq> pendingReqMachInfo_;             ///< outstanding reqMachInfo seq
+    Channel pendingReqMachInfoChannel_ = Channel::Mom;  ///< seqs are per channel
     std::optional<PeerMachineInfo> peerInfo_;
 };
 

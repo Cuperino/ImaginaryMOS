@@ -427,7 +427,12 @@ TEST(Profile1, PushedObjectRoundTripsByteClean) {
     buffer << file.rdbuf();
     auto parsed = imos::codec::parseMessage(buffer.str());
     ASSERT_TRUE(parsed.ok());
-    const Message fixture = std::move(parsed).value();
+    Message fixture = std::move(parsed).value();
+    // The spec example is addressed to the spec's own example pairing;
+    // re-address it to this relationship (a session drops messages meant
+    // for another mosID/ncsID pair). The <mosObj> body is what must survive.
+    fixture.setMosID(TwoRoleFixture::kMosID);
+    fixture.setNcsID(TwoRoleFixture::kNcsID);
     const std::string originalObj = imos::codec::serializeXmlNode(*fixture.body());
 
     TwoRoleFixture fx;

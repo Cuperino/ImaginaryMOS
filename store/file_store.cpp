@@ -601,4 +601,43 @@ Result<bool> FileMessageStore::seenInbound(const PeerId& peer, MessageIdView mes
     return journal.value()->seen.contains(messageId);
 }
 
+// The messageID high-water mark lives in its own tiny file beside the
+// journals: one decimal number, replaced atomically (write-temp-then-rename)
+// so a crash leaves either the old or the new value, never a torn one.
+Result<std::uint64_t> FileMessageStore::lastMessageId(const PeerId& peer) {
+    const std::filesystem::path path = options_.root / sanitizePeerId(peer) / "messageid";
+    std::ifstream in{path};
+    std::uint64_t value = 0;
+    if (!in || !(in >> value)) {
+        return std::uint64_t{0};  // never recorded (or unreadable): start fresh
+    }
+    return value;
+}
+
+Result<void> FileMessageStore::noteMessageId(const PeerId& peer, std::uint64_t messageId) {
+    const std::filesystem::path dir = options_.root / sanitizePeerId(peer);
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (ec) {
+        return makeError(ErrorCode::IoError,
+                         "cannot create store directory " + dir.string() + ": " + ec.message());
+    }
+    const std::filesystem::path path = dir / "messageid";
+    const std::filesystem::path tmp = dir / "messageid.tmp";
+    {
+        std::ofstream out{tmp, std::ios::trunc};
+        out << messageId << '\n';
+        out.flush();
+        if (!out) {
+            return makeError(ErrorCode::IoError, "cannot write " + tmp.string());
+        }
+    }
+    std::filesystem::rename(tmp, path, ec);
+    if (ec) {
+        return makeError(ErrorCode::IoError,
+                         "cannot replace " + path.string() + ": " + ec.message());
+    }
+    return {};
+}
+
 }  // namespace imos::store

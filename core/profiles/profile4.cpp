@@ -3,6 +3,8 @@
 
 #include <imos/profiles/profile4.h>
 
+#include <iterator>
+#include <map>
 #include <utility>
 
 #include <imos/codec/gen/views.h>
@@ -208,6 +210,24 @@ std::vector<std::string> Profile4Responder::storyIDs(std::string_view roID) cons
         ids.push_back(storyID);
     }
     return ids;
+}
+
+void Profile4Responder::pruneStories() {
+    if (profile2_ == nullptr || !profile2_->modelMode()) {
+        return;
+    }
+    const RunningOrderModel& model = profile2_->model();
+    for (auto ro = stories_.begin(); ro != stories_.end();) {
+        // An RO mid-rebuild is not gone — its roList has yet to arrive.
+        if (profile2_->resyncing(ro->first)) {
+            ++ro;
+            continue;
+        }
+        std::erase_if(ro->second, [&](const auto& entry) {
+            return model.story(ro->first, entry.first) == nullptr;
+        });
+        ro = ro->second.empty() ? stories_.erase(ro) : std::next(ro);
+    }
 }
 
 void Profile4Responder::eraseStories(std::string_view roID) {

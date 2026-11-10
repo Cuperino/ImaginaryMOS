@@ -49,6 +49,19 @@ struct SessionConfig {
 
     std::int64_t retryTimeoutMillis = 10'000;  ///< well under the 60 s ack ceiling
     int maxRetries = 3;
+    /// After the capped retries lapse the channel faults (DeliveryFailed +
+    /// ChannelFault are raised once), but the spec's rule still stands:
+    /// "message transmissions which do not receive a response will be
+    /// retried at intervals until a response is received". While the
+    /// connection stays up the head message is re-sent at this slower
+    /// cadence; a reply clears the fault. 0 restores stop-until-reconnect.
+    std::int64_t faultRetryIntervalMillis = 60'000;
+    /// Drop inbound messages whose envelope names a different mosID/ncsID
+    /// pairing than this session's (surfaced as a ProtocolError; nothing is
+    /// applied or acknowledged). roItemCue is exempt on <ncsID>: the spec's
+    /// parent-MOS addressing puts the addressee there. Turn off only for a
+    /// dialect peer known to mislabel its envelopes.
+    bool verifyPeerIdentity = true;
     /// Idle threshold for keepAlive emission; clamped to the spec's 30 s
     /// floor ("no faster than every thirty seconds"). 0 disables.
     std::int64_t keepAliveIntervalMillis = 30'000;
@@ -112,6 +125,13 @@ public:
     /// terminal-reply seam every profile responder uses (plan §3.3).
     Result<Seq> enqueueReply(Channel channel, codec::Message message);
 
+    /// Like enqueueReply() — a response to the peer, never awaiting an ack,
+    /// routed as a reply by the transport — but sent in queue order instead
+    /// of overtaking what is already waiting. For a response that is a
+    /// snapshot including the effects of messages queued ahead of it (the
+    /// roList answering a roReq): it must reach the peer after them.
+    Result<Seq> enqueueOrderedReply(Channel channel, codec::Message message);
+
     /// Profile-layer seam (§3.3): post an application-visible event through
     /// the session's queue — e.g. the Profile 2 resync driver announcing
     /// SessionEventType::ResyncNeeded. The session itself stays
@@ -141,7 +161,8 @@ private:
         std::vector<std::uint8_t> wire;
         codec::MessageType type = codec::MessageType::Unknown;
         bool awaitReply = false;
-        bool isReply = false;  ///< completes the peer's exchange; never blocked
+        bool isReply = false;  ///< answers the peer; routed via ITransport::sendReply
+        bool bypass = false;   ///< reply that never waits behind our in-flight request
         bool sentOnce = false;
         int transmissions = 0;  ///< wire sends so far (original + retries)
     };
@@ -154,6 +175,8 @@ private:
         bool awaitingAck = false;
         int retriesLeft = 0;
         MonotonicTime retryDeadline{};
+        bool faultAnnounced = false;  ///< DeliveryFailed/ChannelFault raised for the head
+        MonotonicTime faultRetryDeadline{};
         MonotonicTime lastSendActivity{};
         MonotonicTime nextHeartbeat{};
         /// Own heartbeat messageID → replies still expected for earlier
@@ -167,7 +190,14 @@ private:
     void pushEvent(SessionEvent event);
     bool ensureStoreOpen(Channel channel);
     void loadPersistedQueue(Channel channel);
-    Result<Seq> enqueueInternal(Channel channel, codec::Message message, bool isReply);
+    enum class SendKind : std::uint8_t { Request, Reply, OrderedReply };
+    Result<Seq> enqueueInternal(Channel channel, codec::Message message, SendKind kind);
+    /// True when a reply could complete the head message: it is in flight,
+    /// or the channel faulted on it and its late answer is still welcome.
+    [[nodiscard]] bool expectingReply(const ChannelState& ch) const;
+    void rememberAck(const std::string& messageId, const std::string& payloadUtf8);
+    bool identityMatches(const codec::Message& message) const;
+    std::uint64_t takeMessageId();
     void trySend(Channel channel);
     bool transmit(Channel channel, const PendingSend& send);
     static void expectLateHeartbeatReplies(ChannelState& ch, const PendingSend& send, int count);
@@ -187,6 +217,10 @@ private:
     std::deque<SessionEvent> events_;
     std::array<ChannelState, kChannelCount> channels_;
     std::uint64_t nextMessageId_ = 1;
+    std::uint64_t reservedMessageIds_ = 0;  ///< high-water mark recorded in the store
+    /// messageID → the ack we answered that peer command with, so a blind
+    /// retry gets the same verdict (bounded; volatile).
+    std::deque<std::pair<std::string, std::string>> sentAcks_;
 };
 
 }  // namespace imos

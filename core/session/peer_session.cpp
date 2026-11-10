@@ -41,6 +41,14 @@ bool participatesInDedupe(const codec::MessageInfo& info) {
 }
 
 constexpr std::size_t kLateHeartbeatReplyCap = 64;
+constexpr std::size_t kSentAckCap = 256;
+/// messageIDs are reserved in the store a block at a time, so the counter
+/// costs one durable write per block rather than one per message; a restart
+/// resumes above the block (skipping its unused tail keeps IDs unique).
+constexpr std::uint64_t kMessageIdBlock = 32;
+/// Spec §4.1.6: a 32-bit signed integer >= 1 that "wraps to 1 when the limit
+/// of the data type is reached".
+constexpr std::uint64_t kMessageIdMax = 0x7FFFFFFF;
 
 }  // namespace
 
@@ -53,12 +61,35 @@ PeerSession::PeerSession(SessionConfig config, Dependencies deps)
         config_.keepAliveIntervalMillis < kKeepAliveFloorMillis) {
         config_.keepAliveIntervalMillis = kKeepAliveFloorMillis;
     }
+    // Resume numbering above everything a previous run may have used.
+    if (Result<std::uint64_t> last = deps_.store->lastMessageId(config_.peerKey); last.ok()) {
+        reservedMessageIds_ = last.value();
+        if (reservedMessageIds_ >= nextMessageId_) {
+            nextMessageId_ = reservedMessageIds_ + 1;
+        }
+    }
     for (std::size_t i = 0; i < kChannelCount; ++i) {
         const auto channel = static_cast<Channel>(i);
         if (ensureStoreOpen(channel)) {
             loadPersistedQueue(channel);  // crash resume (plan §3.3 durability)
         }
     }
+}
+
+std::uint64_t PeerSession::takeMessageId() {
+    if (nextMessageId_ > kMessageIdMax) {
+        nextMessageId_ = 1;
+        reservedMessageIds_ = 0;
+    }
+    if (nextMessageId_ > reservedMessageIds_) {
+        reservedMessageIds_ = std::min(nextMessageId_ + kMessageIdBlock - 1, kMessageIdMax);
+        if (Result<void> noted = deps_.store->noteMessageId(config_.peerKey, reservedMessageIds_);
+            !noted.ok()) {
+            logMessage(LogLevel::Warning,
+                       "messageID counter not persisted: " + noted.error().message);
+        }
+    }
+    return nextMessageId_++;
 }
 
 PeerSession::ChannelState& PeerSession::state(Channel channel) {
@@ -163,7 +194,7 @@ void PeerSession::applyEnvelopeDefaults(codec::Message& message) {
     }
     if (info.envelope == EnvelopeKind::Full &&
         (!message.messageID().has_value() || message.messageID()->empty())) {
-        message.setMessageID(std::to_string(nextMessageId_++));
+        message.setMessageID(std::to_string(takeMessageId()));
     }
 }
 
@@ -179,7 +210,7 @@ Result<Seq> PeerSession::enqueue(codec::Message message) {
         }
         return makeError(ErrorCode::InvalidArgument, "message type is not network traffic");
     }
-    return enqueueInternal(*channel, std::move(message), false);
+    return enqueueInternal(*channel, std::move(message), SendKind::Request);
 }
 
 Result<Seq> PeerSession::enqueue(Channel channel, codec::Message message) {
@@ -189,14 +220,55 @@ Result<Seq> PeerSession::enqueue(Channel channel, codec::Message message) {
                          std::string{message.info().wireName} + " does not belong on the " +
                              std::string{channelName(channel)} + " channel");
     }
-    return enqueueInternal(channel, std::move(message), false);
+    return enqueueInternal(channel, std::move(message), SendKind::Request);
 }
 
 Result<Seq> PeerSession::enqueueReply(Channel channel, codec::Message message) {
-    return enqueueInternal(channel, std::move(message), /*isReply=*/true);
+    return enqueueInternal(channel, std::move(message), SendKind::Reply);
 }
 
-Result<Seq> PeerSession::enqueueInternal(Channel channel, codec::Message message, bool isReply) {
+Result<Seq> PeerSession::enqueueOrderedReply(Channel channel, codec::Message message) {
+    return enqueueInternal(channel, std::move(message), SendKind::OrderedReply);
+}
+
+void PeerSession::rememberAck(const std::string& messageId, const std::string& payloadUtf8) {
+    for (auto& [id, payload] : sentAcks_) {
+        if (id == messageId) {
+            payload = payloadUtf8;
+            return;
+        }
+    }
+    sentAcks_.emplace_back(messageId, payloadUtf8);
+    if (sentAcks_.size() > kSentAckCap) {
+        sentAcks_.pop_front();
+    }
+}
+
+bool PeerSession::expectingReply(const ChannelState& ch) const {
+    if (ch.queue.empty()) {
+        return false;
+    }
+    const PendingSend& front = ch.queue.front();
+    return ch.awaitingAck || (ch.faulted && front.awaitReply && front.sentOnce);
+}
+
+bool PeerSession::identityMatches(const codec::Message& message) const {
+    if (!config_.verifyPeerIdentity || message.info().envelope == EnvelopeKind::None) {
+        return true;
+    }
+    // An absent or empty ID is tolerated (nothing contradicts the pairing);
+    // a different one names somebody else's relationship.
+    const std::optional<std::string_view> mosID = message.mosID();
+    if (mosID.has_value() && !mosID->empty() && *mosID != config_.mosID) {
+        return false;
+    }
+    const std::optional<std::string_view> ncsID = message.ncsID();
+    return !ncsID.has_value() || ncsID->empty() || *ncsID == config_.ncsID ||
+           message.type() == codec::MessageType::RoItemCue;
+}
+
+Result<Seq> PeerSession::enqueueInternal(Channel channel, codec::Message message, SendKind kind) {
+    const bool isReply = kind != SendKind::Request;
     const codec::MessageInfo& info = message.info();
     if (info.legacyRemoved) {
         // Plan §3.2: the thirteen removed messages have no send path in 4.0
@@ -215,10 +287,14 @@ Result<Seq> PeerSession::enqueueInternal(Channel channel, codec::Message message
     send.type = message.type();
     send.awaitReply = !isReply && !info.responses.empty();
     send.isReply = isReply;
+    send.bypass = kind == SendKind::Reply;
     if (const std::optional<std::string_view> id = message.messageID()) {
         send.messageId = *id;
     }
     send.payloadUtf8 = codec::serializeMessage(message);
+    if (isReply && info.isAck && !send.messageId.empty()) {
+        rememberAck(send.messageId, send.payloadUtf8);
+    }
 
     Result<std::vector<std::uint8_t>> wire =
         encoding::encodeFromUtf8(send.payloadUtf8, config_.wireEncode);
@@ -257,8 +333,9 @@ Result<Seq> PeerSession::enqueueInternal(Channel channel, codec::Message message
 
 bool PeerSession::transmit(Channel channel, const PendingSend& send) {
     ChannelState& ch = state(channel);
-    Result<void> sent = deps_.transport->send(
-        channel, std::span<const std::uint8_t>{send.wire.data(), send.wire.size()});
+    const std::span<const std::uint8_t> frame{send.wire.data(), send.wire.size()};
+    Result<void> sent = send.isReply ? deps_.transport->sendReply(channel, frame)
+                                     : deps_.transport->send(channel, frame);
     if (!sent.ok()) {
         logMessage(LogLevel::Debug, "transport send failed: " + sent.error().message);
         return false;
@@ -312,13 +389,15 @@ void PeerSession::trySend(Channel channel) {
     // one rule governs messages we initiate, but the peer's exchange must
     // still complete — otherwise two crossing requests on one channel (e.g.
     // an NCS mid-commit while the device issues a resync roReq) deadlock,
-    // each side holding the other's reply behind its blocked queue.
-    if (!ch.connected || ch.faulted || !ch.awaitingAck) {
+    // each side holding the other's reply behind its blocked queue. The same
+    // holds while the head message is faulted: the peer is still owed its
+    // answers.
+    if (!ch.connected || (!ch.awaitingAck && !ch.faulted)) {
         return;
     }
     for (std::size_t i = 1; i < ch.queue.size();) {
         PendingSend& send = ch.queue[i];
-        if (!send.isReply) {
+        if (!send.bypass) {
             ++i;
             continue;
         }
@@ -337,6 +416,8 @@ void PeerSession::completeInFlight(Channel channel, codec::Message reply) {
     PendingSend front = std::move(ch.queue.front());
     ch.queue.pop_front();
     ch.awaitingAck = false;
+    ch.faulted = false;  // a late answer to a faulted head clears the fault
+    ch.faultAnnounced = false;
     expectLateHeartbeatReplies(ch, front, front.transmissions - 1);
     if (ch.storeOpen && front.seq != 0) {
         (void)deps_.store->markAcked(ch.stream, front.seq);
@@ -359,7 +440,7 @@ void PeerSession::enqueueHeartbeatReply(Channel channel, const codec::Message& r
     if (codec::XmlNode* body = reply.body()) {
         body->appendElement("time").setText(formatSpecTime(deps_.clock->wallClock()));
     }
-    Result<Seq> queued = enqueueInternal(channel, std::move(reply), /*isReply=*/true);
+    Result<Seq> queued = enqueueInternal(channel, std::move(reply), SendKind::Reply);
     if (!queued.ok()) {
         logMessage(LogLevel::Warning, "failed to queue heartbeat reply: " + queued.error().message);
     }
@@ -375,14 +456,34 @@ void PeerSession::handleInbound(Channel channel, codec::Message message) {
         return;
     }
 
+    if (!identityMatches(message)) {
+        SessionEvent event;
+        event.type = SessionEventType::ProtocolError;
+        event.channel = channel;
+        event.diagnostic = "message for mosID '" + std::string{message.mosID().value_or("")} +
+                           "' / ncsID '" + std::string{message.ncsID().value_or("")} +
+                           "' is not addressed to this relationship ('" + config_.mosID + "' / '" +
+                           config_.ncsID + "'); dropped";
+        pushEvent(std::move(event));
+        return;
+    }
+
     // Does this complete the in-flight exchange? Correlate by response set
     // first, then by echoed messageID when both sides carry one.
-    if (ch.awaitingAck && !ch.queue.empty() &&
+    if (expectingReply(ch) &&
         typeIsAmong(message.type(), codec::messageInfo(ch.queue.front().type).responses)) {
         const PendingSend& front = ch.queue.front();
         const std::optional<std::string_view> replyId = message.messageID();
-        if (replyId.has_value() && !replyId->empty() && !front.messageId.empty() &&
-            *replyId != front.messageId) {
+        const bool idMismatch = replyId.has_value() && !replyId->empty() &&
+                                !front.messageId.empty() && *replyId != front.messageId;
+        if (!idMismatch) {
+            completeInFlight(channel, std::move(message));
+            return;
+        }
+        // A heartbeat is its own reply type: one carrying a different
+        // messageID while ours is in flight is the peer's own heartbeat
+        // crossing ours, not a bad reply — fall through and answer it.
+        if (message.type() != codec::MessageType::Heartbeat) {
             SessionEvent event;
             event.type = SessionEventType::ProtocolError;
             event.channel = channel;
@@ -391,8 +492,6 @@ void PeerSession::handleInbound(Channel channel, codec::Message message) {
             pushEvent(std::move(event));
             return;
         }
-        completeInFlight(channel, std::move(message));
-        return;
     }
 
     std::string messageId;
@@ -420,11 +519,23 @@ void PeerSession::handleInbound(Channel channel, codec::Message message) {
         Result<bool> seen = deps_.store->seenInbound(config_.peerKey, messageId);
         if (seen.ok() && seen.value()) {
             // Re-ack the blind retry; participatesInDedupe() guarantees a
-            // bare ACK is the whole answer.
+            // bare ACK is the whole answer. The retry gets the verdict the
+            // first copy got: the ack we sent then is replayed when we
+            // still hold it (a refusal must not turn into "OK"). Only when
+            // it is gone — the window outlives a restart, this cache does
+            // not — is a plain acknowledgement synthesized.
             const codec::MessageType ackType = info.responses.front();
-            codec::Message ack = codec::makeMessage(ackType);
+            const auto remembered =
+                std::find_if(sentAcks_.begin(), sentAcks_.end(),
+                             [&](const auto& entry) { return entry.first == messageId; });
+            Result<codec::Message> replay =
+                remembered != sentAcks_.end()
+                    ? codec::parseMessage(remembered->second, config_.parseLimits)
+                    : Result<codec::Message>{makeError(ErrorCode::NotFound, "no remembered ack")};
+            codec::Message ack =
+                replay.ok() ? std::move(replay).value() : codec::makeMessage(ackType);
             ack.setMessageID(messageId);
-            if (ackType == codec::MessageType::RoAck) {
+            if (!replay.ok() && ackType == codec::MessageType::RoAck) {
                 if (const codec::XmlNode* body = message.body()) {
                     if (const codec::XmlNode* roId = body->firstChildElement("roID")) {
                         if (codec::XmlNode* ackBody = ack.body()) {
@@ -434,7 +545,7 @@ void PeerSession::handleInbound(Channel channel, codec::Message message) {
                     }
                 }
             }
-            (void)enqueueInternal(channel, std::move(ack), /*isReply=*/true);
+            (void)enqueueInternal(channel, std::move(ack), SendKind::Reply);
             SessionEvent event;
             event.type = SessionEventType::DuplicateSuppressed;
             event.channel = channel;
@@ -548,6 +659,7 @@ void PeerSession::onChannelConnected(Channel channel) {
     ChannelState& ch = state(channel);
     ch.connected = true;
     ch.faulted = false;
+    ch.faultAnnounced = false;
     ch.lastSendActivity = deps_.clock->now();
     if (config_.heartbeatIntervalMillis > 0 && ch.nextHeartbeat == MonotonicTime{}) {
         ch.nextHeartbeat = deps_.clock->now() + config_.heartbeatIntervalMillis;
@@ -622,23 +734,40 @@ void PeerSession::poll() {
                 PendingSend& front = ch.queue.front();
                 ch.faulted = true;
                 ch.awaitingAck = false;
+                ch.faultRetryDeadline = now + config_.faultRetryIntervalMillis;
                 // Replies to the transmissions made so far may still arrive
                 // while nothing is in flight; the resend after reconnect
                 // starts a fresh count.
                 expectLateHeartbeatReplies(ch, front, front.transmissions);
                 front.transmissions = 0;
-                SessionEvent failed;
-                failed.type = SessionEventType::DeliveryFailed;
-                failed.channel = channel;
-                failed.seq = front.seq;
-                failed.messageId = front.messageId;
-                pushEvent(std::move(failed));
-                SessionEvent fault;
-                fault.type = SessionEventType::ChannelFault;
-                fault.channel = channel;
-                fault.diagnostic = "retries exhausted";
-                pushEvent(std::move(fault));
+                if (!ch.faultAnnounced) {
+                    ch.faultAnnounced = true;
+                    SessionEvent failed;
+                    failed.type = SessionEventType::DeliveryFailed;
+                    failed.channel = channel;
+                    failed.seq = front.seq;
+                    failed.messageId = front.messageId;
+                    pushEvent(std::move(failed));
+                    SessionEvent fault;
+                    fault.type = SessionEventType::ChannelFault;
+                    fault.channel = channel;
+                    fault.diagnostic = "retries exhausted";
+                    pushEvent(std::move(fault));
+                }
             }
+        }
+
+        // Spec §2.3: an unanswered message is "retried at intervals until a
+        // response is received". The fault stands (nothing else is sent on
+        // the channel), but the head keeps going out at the slow cadence.
+        if (ch.faulted && !ch.queue.empty() && config_.faultRetryIntervalMillis > 0 &&
+            now >= ch.faultRetryDeadline) {
+            PendingSend& front = ch.queue.front();
+            if (transmit(channel, front)) {
+                front.sentOnce = true;
+                ++front.transmissions;
+            }
+            ch.faultRetryDeadline = now + config_.faultRetryIntervalMillis;
         }
 
         if (config_.heartbeatIntervalMillis > 0 && !ch.faulted &&
@@ -648,7 +777,7 @@ void PeerSession::poll() {
             if (codec::XmlNode* body = heartbeat.body()) {
                 body->appendElement("time").setText(formatSpecTime(deps_.clock->wallClock()));
             }
-            Result<Seq> queued = enqueueInternal(channel, std::move(heartbeat), false);
+            Result<Seq> queued = enqueueInternal(channel, std::move(heartbeat), SendKind::Request);
             if (!queued.ok()) {
                 logMessage(LogLevel::Warning,
                            "failed to queue heartbeat: " + queued.error().message);
@@ -673,7 +802,13 @@ std::optional<MonotonicTime> PeerSession::nextDeadline() const {
         }
     };
     for (const ChannelState& ch : channels_) {
-        if (!ch.connected || ch.faulted) {
+        if (!ch.connected) {
+            continue;
+        }
+        if (ch.faulted) {
+            if (!ch.queue.empty() && config_.faultRetryIntervalMillis > 0) {
+                consider(ch.faultRetryDeadline);
+            }
             continue;
         }
         if (ch.awaitingAck) {
