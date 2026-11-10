@@ -34,6 +34,8 @@
 
 #include <imos/codec/message.h>
 #include <imos/encoding/encoding.h>
+#include <imos/profiles/object_query.h>
+#include <imos/profiles/profile2.h>
 #include <imos/profiles/profile7.h>
 #include <imos/time_format.h>
 
@@ -68,6 +70,17 @@ Message parseFrame(const std::vector<std::uint8_t>& frame) {
     auto parsed = imos::codec::parseMessage(decoded.value());
     EXPECT_TRUE(parsed.ok());
     return std::move(parsed).value();
+}
+
+std::deque<std::vector<std::uint8_t>>& queueOf(LoopbackEndpoint& endpoint, Channel channel) {
+    return endpoint.outbound[static_cast<std::size_t>(channel)];
+}
+
+/// Parse a subtree out of a wrapper document.
+XmlNode parseNode(const std::string& xml) {
+    auto parsed = imos::codec::parseMessage("<mos>" + xml + "</mos>");
+    EXPECT_TRUE(parsed.ok());
+    return parsed.value().document().root.children.front();
 }
 
 std::deque<std::vector<std::uint8_t>>& roQueue(LoopbackEndpoint& endpoint) {
@@ -364,4 +377,408 @@ TEST(SpecRegression, RetriedHeartbeatNeitherLoopsNorGoesUnanswered) {
     EXPECT_TRUE(roQueue(fx.deviceTransport).empty()) << "a late heartbeat reply was answered";
     EXPECT_TRUE(roQueue(fx.ncsTransport).empty());
     EXPECT_TRUE(fx.device->session().channelIdle(Channel::Ro));
+}
+
+// ===========================================================================
+// SpecReviewOpen — findings from the same review that were first identified
+// by reading the code against the specification. Each test below runs the
+// scenario; the ones that fail pin a deviation that is still OPEN (no fix has
+// landed). The comment on each names the spec text and the code involved.
+// ===========================================================================
+
+// A. Spec §2.3 note 5: "Message transmissions which do not receive a
+//    response will be retried at intervals until a response is received."
+//    After maxRetries the channel is marked faulted and — while the socket
+//    stays up — never transmits again: no further retry, no heartbeat, no
+//    keepAlive. Only a transport reconnect clears it, and nothing in the
+//    library forces one. (core/session/peer_session.cpp, poll().)
+TEST(SpecReviewOpen, UnansweredMessageKeepsBeingRetriedWhileConnected) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    Message stat = imos::codec::makeMessage(MessageType::RoElementStat);
+    stat.body()->setAttribute("element", "RO");
+    stat.body()->appendElement("roID").setText("ROX");
+    stat.body()->appendElement("status").setText("READY");
+    stat.body()->appendElement("time").setText("2026-01-01T00:00:00");
+    ASSERT_TRUE(fx.device->session().enqueue(std::move(stat)).ok());
+
+    // The NCS is up but silent: let the capped retries lapse.
+    for (int i = 0; i < 6; ++i) {
+        fx.clock.advanceSeconds(11);
+        fx.device->poll();
+    }
+    const std::size_t sentAtFault = roQueue(fx.deviceTransport).size();
+    ASSERT_GE(sentAtFault, 2U);
+
+    // The connection never dropped. Ten more minutes of polling must show at
+    // least one further attempt.
+    for (int i = 0; i < 60; ++i) {
+        fx.clock.advanceSeconds(10);
+        fx.device->poll();
+    }
+    EXPECT_GT(roQueue(fx.deviceTransport).size(), sentAtFault)
+        << "the channel went permanently silent after the retry cap";
+}
+
+// B. Spec §2.2: for a mosObj with status UPDATED, "if metadata tags exist in
+//    the target MOS Object and are not present in the mosObj UPDATED message,
+//    the metadata tags ... should be left intact". The NCS directory replaces
+//    the stored object wholesale. (core/profiles/profile1.cpp,
+//    ObjectDirectory::ingest.)
+TEST(SpecReviewOpen, MosObjUpdatedLeavesAbsentTagsIntact) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    const auto announce = [&](const std::string& bodyXml) {
+        Message object = imos::codec::makeMessage(MessageType::MosObj);
+        *object.body() = parseNode(bodyXml);
+        ASSERT_TRUE(fx.device->announceObject(std::move(object)).ok());
+        fx.settle();
+    };
+    announce(
+        "<mosObj><objID>M1</objID><objSlug>First slug</objSlug>"
+        "<mosAbstract>An abstract</mosAbstract><objType>VIDEO</objType>"
+        "<objTB>50</objTB><objRev>1</objRev><objDur>250</objDur><status>NEW</status>"
+        "<objAir>READY</objAir><description>Searchable description</description>"
+        "</mosObj>");
+    ASSERT_NE(fx.ncs->object("M1"), nullptr);
+
+    announce(
+        "<mosObj><objID>M1</objID><objSlug>Second slug</objSlug>"
+        "<objRev>2</objRev><status>UPDATED</status></mosObj>");
+    const Message* stored = fx.ncs->object("M1");
+    ASSERT_NE(stored, nullptr);
+    const XmlNode* body = stored->body();
+    ASSERT_NE(body, nullptr);
+    EXPECT_EQ(body->childText("objSlug"), "Second slug");
+    EXPECT_EQ(body->childText("mosAbstract"), "An abstract");
+    EXPECT_EQ(body->childText("objDur"), "250");
+    EXPECT_EQ(body->childText("description"), "Searchable description");
+}
+
+// E. Spec §2.1: every message names its mosID/ncsID pair and "the MOS and
+//    NCS character names are predefined in each system". A message addressed
+//    to a different pairing is not this relationship's traffic, yet the
+//    session applies it. (No identity check exists anywhere in core/.)
+TEST(SpecReviewOpen, MessageForADifferentPairingIsNotApplied) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    fx.device->onFrameReceived(Channel::Ro,
+                               encode("<mos><mosID>some.other.device.mos</mosID>"
+                                      "<ncsID>some.other.ncs</ncsID><messageID>41</messageID>"
+                                      "<roCreate><roID>FOREIGN</roID><roSlug>Not ours</roSlug>"
+                                      "</roCreate></mos>"));
+    EXPECT_FALSE(fx.device->runningOrderModel().has("FOREIGN"))
+        << "a roCreate addressed to another mosID/ncsID pair was applied";
+}
+
+// F1. Spec §3.9.1: for NEW, element_source holds "one or more stories to be
+//     inserted". Only the last one is created; the roAck still reports
+//     success. (incs/profile7_ncs.cpp, the NEW payload loop.)
+TEST(SpecReviewOpen, StoryActionNewInsertsEveryStory) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    convergeBaseRo(fx, "RO1");
+    fx.ncs->onFrameReceived(
+        Channel::Ro, encode("<mos>" + envelope("610") +
+                            "<roReqStoryAction operation=\"NEW\"><roStorySend><roID>RO1</roID>"
+                            "<element_target><storyID>s1</storyID></element_target>"
+                            "<element_source>"
+                            "<story><storyID>n1</storyID><storySlug>one</storySlug></story>"
+                            "<story><storyID>n2</storyID><storySlug>two</storySlug></story>"
+                            "</element_source></roStorySend></roReqStoryAction></mos>"));
+    const std::vector<std::string> stories = fx.ncs->author().desired().storyIDs("RO1");
+    EXPECT_EQ(stories, (std::vector<std::string>{"n1", "n2", "s1", "s2", "s3", "s4"}));
+}
+
+// F2. Spec §3.9.1: UPDATE "replaces an existing Story". The replacement the
+//     NCS builds is header-only, so the story's item references vanish from
+//     the running order even when the MOS's own body still embeds them.
+//     (incs/profile7_ncs.cpp, applyUpdate: makeStory(id, slug, num).)
+TEST(SpecReviewOpen, StoryActionUpdateKeepsItemsTheBodyStillReferences) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    convergeBaseRo(fx, "RO1");
+    ASSERT_EQ(fx.ncs->author().desired().itemIDs("RO1", "s1").size(), 2U);
+
+    imos::profiles::StoryActionRequest request;
+    request.operation = imos::profiles::StoryAction::Update;
+    request.roID = "RO1";
+    request.storyID = "s1";
+    request.storySlug = "slug";
+    request.storyBody = parseNode(std::string{"<storyBody><p>Intro</p>"} +
+                                  "<storyItem><itemID>s1-i0</itemID><objID>OBJ0</objID>"
+                                  "<mosID>" +
+                                  TwoRoleFixture::kMosID +
+                                  "</mosID></storyItem><p>Middle</p>"
+                                  "<storyItem><itemID>s1-i1</itemID><objID>OBJ1</objID><mosID>" +
+                                  TwoRoleFixture::kMosID + "</mosID></storyItem></storyBody>");
+    ASSERT_TRUE(fx.device->requestStoryAction(request).ok());
+    fx.settle();
+    const std::optional<imos::profiles::StoryActionResult> result =
+        fx.device->nextStoryActionResult();
+    ASSERT_TRUE(result.has_value());
+    ASSERT_TRUE(result->ok) << result->roStatus;
+
+    EXPECT_EQ(fx.ncs->author().desired().itemIDs("RO1", "s1"),
+              (std::vector<std::string>{"s1-i0", "s1-i1"}))
+        << "the UPDATE stripped the story's items from the running order";
+}
+
+// G. Spec §2.3 "Important Note": once the device's list no longer matches
+//    what the NCS sent, it sends roElementStat DISCONNECTED "and ACK[s] all
+//    subsequent 'ro' messages with a status of DISCONNECTED". In model mode
+//    the acks are generated by the library and always say OK.
+TEST(SpecReviewOpen, DisconnectedRunningOrderAcksWithDisconnected) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    convergeBaseRo(fx, "RO1");
+
+    imos::profiles::ElementStatusReport report;
+    report.element = imos::profiles::RoElement::RunningOrder;
+    report.roID = "RO1";
+    report.status = "DISCONNECTED";
+    ASSERT_TRUE(fx.device->reportElementStatus(report).ok());
+    fx.settle();
+
+    ASSERT_TRUE(fx.ncs->author().moveStory("RO1", "s4", "s1").ok());
+    ASSERT_TRUE(fx.ncs->author().commit("RO1").ok());
+    fx.settle();
+    const std::vector<incs::CommitEvent> commits = drainCommits(*fx.ncs);
+    ASSERT_EQ(commits.size(), 1U);
+    EXPECT_EQ(commits[0].roStatus, "DISCONNECTED");
+}
+
+// H1. Store sequence numbers are per channel, so a mom send and a ro send
+//     can share one. Profile5NcsResponder keys its pending roCtrl sends by
+//     seq alone, so a delivery failure on mom resolves an unrelated roCtrl
+//     as failed — and the roCtrl's real ack then matches nothing.
+//     (core/profiles/profile5.cpp, Profile5NcsResponder::handle.)
+TEST(SpecReviewOpen, MomDeliveryFailureDoesNotResolveARoCtrl) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+
+    // mom seq 1: a mosReqObj the device never answers. Three of its four
+    // transmissions go by (poll() releases one retry per timeout).
+    ASSERT_TRUE(fx.ncs->requestObject("M1").ok());
+    for (int i = 0; i < 3; ++i) {
+        fx.clock.advanceSeconds(11);
+        fx.ncs->poll();
+    }
+
+    // ro seq 1: a roCtrl, sent late enough to still have retries in hand
+    // when the mom exchange gives up on the next timeout.
+    ASSERT_TRUE(fx.ncs
+                    ->sendCtrl(imos::profiles::CtrlScope::RunningOrder, "RO1", "", "",
+                               imos::profiles::CtrlCommand::Ready)
+                    .ok());
+    fx.clock.advanceSeconds(11);
+    fx.ncs->poll();
+    ASSERT_FALSE(fx.ncs->session().channelIdle(Channel::Ro));  // roCtrl still in flight
+    const std::optional<imos::profiles::CtrlResult> early = fx.ncs->nextCtrlResult();
+    EXPECT_FALSE(early.has_value())
+        << "a roCtrl still in flight was resolved as '" << (early ? early->roStatus : "") << "'";
+}
+
+// H2. A story deleted from the running order (or a deleted RO) leaves its
+//     roStorySend body in the device's story store forever.
+//     (core/profiles/profile4.cpp: eraseStory/eraseStories are never called.)
+TEST(SpecReviewOpen, DeletedStoryIsDroppedFromTheStoryStore) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    convergeBaseRo(fx, "RO1");
+    ASSERT_TRUE(fx.ncs->author()
+                    .setStoryBody("RO1", "s2", parseNode("<storyBody><p>Script</p></storyBody>"))
+                    .ok());
+    ASSERT_TRUE(fx.ncs->sendStory("RO1", "s2").ok());
+    fx.settle();
+    ASSERT_NE(fx.device->story("RO1", "s2"), nullptr);
+
+    ASSERT_TRUE(fx.ncs->author().removeStory("RO1", "s2").ok());
+    ASSERT_TRUE(fx.ncs->author().commit("RO1").ok());
+    fx.settle();
+    ASSERT_EQ(fx.device->runningOrderModel().story("RO1", "s2"), nullptr);
+    EXPECT_EQ(fx.device->story("RO1", "s2"), nullptr)
+        << "the body of a story no longer in the running order is still held";
+}
+
+// H3. peer_session.h documents listMachInfo as a terminal reply that never
+//     waits behind this side's own in-flight request. Profile0Responder
+//     queues it with enqueue(), so it does wait.
+//     (core/profiles/profile0.cpp, handle().)
+TEST(SpecReviewOpen, ListMachInfoIsNotHeldBehindAnInFlightRequest) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    Message stat = imos::codec::makeMessage(MessageType::RoElementStat);
+    stat.body()->setAttribute("element", "RO");
+    stat.body()->appendElement("roID").setText("ROX");
+    stat.body()->appendElement("status").setText("READY");
+    stat.body()->appendElement("time").setText("2026-01-01T00:00:00");
+    ASSERT_TRUE(fx.device->session().enqueue(std::move(stat)).ok());
+    roQueue(fx.deviceTransport).clear();  // lost: the device stays in flight
+
+    ASSERT_TRUE(fx.ncs->requestMachineInfo(Channel::Ro).ok());
+    ASSERT_TRUE(fx.pump());  // reqMachInfo reaches the device
+    ASSERT_EQ(roQueue(fx.deviceTransport).size(), 1U)
+        << "listMachInfo is queued behind the device's unacknowledged message";
+    EXPECT_EQ(parseFrame(roQueue(fx.deviceTransport).front()).type(), MessageType::ListMachInfo);
+}
+
+// H4. Spec §3.2.5: a null listReturnTotal "indicates generally more than one
+//     object has been found" — it is not zero. The directory's paged resync
+//     reads it as 0 and stops after the first page.
+//     (core/profiles/profile3.cpp, ObjectDirectory::completeQuery.)
+TEST(SpecReviewOpen, NullListReturnTotalDoesNotEndDirectoryResync) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+
+    // Teach the NCS that its peer supports Profile 3.
+    ASSERT_TRUE(fx.ncs->requestMachineInfo(Channel::Mom).ok());
+    ASSERT_EQ(queueOf(fx.ncsTransport, Channel::Mom).size(), 1U);
+    const Message req = parseFrame(queueOf(fx.ncsTransport, Channel::Mom).front());
+    queueOf(fx.ncsTransport, Channel::Mom).clear();
+    std::string profiles;
+    for (int n = 0; n < 8; ++n) {
+        profiles += "<mosProfile number=\"" + std::to_string(n) + "\">YES</mosProfile>";
+    }
+    fx.ncs->onFrameReceived(
+        Channel::Mom, encode("<mos>" + envelope(std::string{*req.messageID()}) +
+                             "<listMachInfo><manufacturer>X</manufacturer><model>Y</model><hwRev/>"
+                             "<swRev>1</swRev><DOM/><SN/><ID>device.example.mos</ID>"
+                             "<time>2026-01-01T00:00:00</time><mosRev>4.0</mosRev>"
+                             "<supportedProfiles deviceType=\"MOS\">" +
+                             profiles + "</supportedProfiles></listMachInfo></mos>"));
+
+    ASSERT_TRUE(fx.ncs->resyncDirectory(2).ok());
+    ASSERT_EQ(queueOf(fx.ncsTransport, Channel::Aux).size(), 1U);
+    const Message query = parseFrame(queueOf(fx.ncsTransport, Channel::Aux).front());
+    ASSERT_EQ(query.type(), MessageType::MosReqObjList);
+    queueOf(fx.ncsTransport, Channel::Aux).clear();
+
+    // First page: two objects, total unknown (null).
+    fx.ncs->onFrameReceived(Channel::Aux,
+                            encode("<mos>" + envelope(std::string{*query.messageID()}) +
+                                   "<mosObjList><queryID>" + query.body()->childText("queryID") +
+                                   "</queryID><listReturnStart>1</listReturnStart>"
+                                   "<listReturnEnd>2</listReturnEnd><listReturnTotal/>"
+                                   "<list><mosObj><objID>A</objID><objSlug>a</objSlug></mosObj>"
+                                   "<mosObj><objID>B</objID><objSlug>b</objSlug></mosObj></list>"
+                                   "</mosObjList></mos>"));
+    ASSERT_EQ(queueOf(fx.ncsTransport, Channel::Aux).size(), 1U)
+        << "the resync stopped after one page although the total was unknown";
+    const Message next = parseFrame(queueOf(fx.ncsTransport, Channel::Aux).front());
+    EXPECT_EQ(next.body()->childText("listReturnStart"), "3");
+}
+
+// H5. A numeric literal too large for a double is infinity; XPath's
+//     string() of it is "Infinity". The evaluator converts the value through
+//     long long first — undefined behaviour for infinity — and produces a
+//     garbage integer. (core/profiles/object_query.cpp, operandString.)
+TEST(SpecReviewOpen, HugeXPathNumberLiteralIsNotCastThroughAnInteger) {
+    const auto field = imos::profiles::parseFieldXPath("/f[. = string(1e400)]");
+    ASSERT_TRUE(field.ok()) << field.error().message;
+    const XmlNode payload = parseNode("<mosPayload><f>Infinity</f></mosPayload>");
+    EXPECT_TRUE(imos::profiles::evaluateField(field.value(), payload));
+}
+
+// H6. Both sides originate a heartbeat on the same channel at the same
+//     moment (spec §2.1: answer a heartbeat with a heartbeat, "avoid an
+//     endless looping condition"). The peer's heartbeat arrives while ours
+//     is in flight, is taken for a reply with the wrong messageID, and is
+//     dropped as a ProtocolError — neither side is answered until a retry.
+//     (core/session/peer_session.cpp, handleInbound correlation.)
+TEST(SpecReviewOpen, CrossingHeartbeatsAreBothAnswered) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    Message fromDevice = imos::codec::makeMessage(MessageType::Heartbeat);
+    fromDevice.setMessageID("101");
+    Message fromNcs = imos::codec::makeMessage(MessageType::Heartbeat);
+    fromNcs.setMessageID("202");
+    ASSERT_TRUE(fx.device->session().enqueue(Channel::Ro, std::move(fromDevice)).ok());
+    ASSERT_TRUE(fx.ncs->session().enqueue(Channel::Ro, std::move(fromNcs)).ok());
+    fx.settle();  // no clock advance: no retry may be needed
+
+    EXPECT_TRUE(fx.device->session().channelIdle(Channel::Ro));
+    EXPECT_TRUE(fx.ncs->session().channelIdle(Channel::Ro));
+    int protocolErrors = 0;
+    while (std::optional<imos::SessionEvent> event = fx.device->nextEvent()) {
+        protocolErrors += event->type == imos::SessionEventType::ProtocolError ? 1 : 0;
+    }
+    while (std::optional<imos::SessionEvent> event = fx.ncs->nextEvent()) {
+        protocolErrors += event->type == imos::SessionEventType::ProtocolError ? 1 : 0;
+    }
+    EXPECT_EQ(protocolErrors, 0);
+}
+
+// I1. Spec §4.1.6: "the last used messageID must be persistent." A restarted
+//     session over the same store starts numbering at 1 again, re-using IDs
+//     the peer's dedupe window may still hold.
+//     (core/session/peer_session.cpp: nextMessageId_ is never stored.)
+TEST(SpecReviewOpen, MessageIdCounterSurvivesARestart) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    convergeBaseRo(fx, "RO1");
+    const auto sendStatus = [&]() {
+        imos::profiles::ElementStatusReport report;
+        report.element = imos::profiles::RoElement::RunningOrder;
+        report.roID = "RO1";
+        report.status = "READY";
+        EXPECT_TRUE(fx.device->reportElementStatus(report).ok());
+        EXPECT_EQ(roQueue(fx.deviceTransport).size(), 1U);
+        const std::string id{parseFrame(roQueue(fx.deviceTransport).front()).messageID().value()};
+        fx.settle();
+        return std::stoll(id);
+    };
+    const long long before = sendStatus();
+
+    // Restart the NCS-facing device session over the same store; rebuild its
+    // model through the NCS so it can report status again.
+    fx.device = std::make_unique<imos::Device>(
+        imos::DeviceConfig{TwoRoleFixture::sessionConfig(),
+                           TwoRoleFixture::machineInfo(imos::profiles::DeviceType::Mos)},
+        imos::PeerSession::Dependencies{&fx.clock, &fx.deviceTransport, &fx.deviceStore, nullptr,
+                                        &fx.random, nullptr});
+    for (std::size_t i = 0; i < imos::kChannelCount; ++i) {
+        fx.device->onChannelConnected(static_cast<Channel>(i));
+    }
+    // A fresh message from the restarted session.
+    Message stat = imos::codec::makeMessage(MessageType::RoElementStat);
+    stat.body()->setAttribute("element", "RO");
+    stat.body()->appendElement("roID").setText("RO1");
+    stat.body()->appendElement("status").setText("READY");
+    stat.body()->appendElement("time").setText("2026-01-01T00:00:00");
+    ASSERT_TRUE(fx.device->session().enqueue(std::move(stat)).ok());
+    ASSERT_EQ(roQueue(fx.deviceTransport).size(), 1U);
+    const long long after = std::stoll(
+        std::string{parseFrame(roQueue(fx.deviceTransport).front()).messageID().value()});
+    EXPECT_GT(after, before) << "the restarted session re-used messageID " << after;
+}
+
+// I2. A retried command is answered from the dedupe window with a fabricated
+//     "OK" — even when the original was refused. The retry must get the same
+//     verdict the first copy got. (core/session/peer_session.cpp, duplicate
+//     branch.)
+TEST(SpecReviewOpen, RetryOfARefusedCommandIsNotAckedOk) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    const std::string action =
+        "<mos>" + envelope("950") +
+        "<roElementAction operation=\"DELETE\"><roID>NOPE</roID>"
+        "<element_source><storyID>s1</storyID></element_source></roElementAction></mos>";
+    const auto ackOf = [&]() {
+        for (const auto& frame : roQueue(fx.deviceTransport)) {
+            const Message message = parseFrame(frame);
+            if (message.type() == MessageType::RoAck) {
+                return message;
+            }
+        }
+        ADD_FAILURE() << "no roAck";
+        return imos::codec::makeMessage(MessageType::RoAck);
+    };
+    fx.device->onFrameReceived(Channel::Ro, encode(action));
+    ASSERT_TRUE(imos::profiles::roAckIsNack(ackOf()));  // unknown roID → refused
+    roQueue(fx.deviceTransport).clear();
+
+    fx.device->onFrameReceived(Channel::Ro, encode(action));  // the NCS retries
+    EXPECT_TRUE(imos::profiles::roAckIsNack(ackOf()))
+        << "the retry of a refused command was acknowledged as OK";
 }

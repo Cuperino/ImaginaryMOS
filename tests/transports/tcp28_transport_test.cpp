@@ -916,3 +916,44 @@ TEST(Tcp28Transport, Profile2RunningOrderWorkflowOverTcp) {
 
     rig.stop();
 }
+
+// ---- spec-review finding, still open ---------------------------------------
+//
+// 2.8.5 "Message Transport": "MOS uses two ports bi-directionally.
+// Applications will simultaneously listen for messages on both ports", and
+// the "Two Ports - Four Sockets" note has each machine accepting connections
+// on each port. Tcp28Endpoint gives every role exactly one direction per
+// channel (reference/m6-plan.md §1.1): the device never listens on the lower
+// port and the NCS never listens on the upper port, so a peer that dials the
+// port for the messages *it* originates there — an NCS sending mosReqAll to
+// the device's 10540, a device sending roElementStat to the NCS's 10541 — is
+// refused. Expected to fail until the endpoint listens on both.
+TEST(Tcp28Transport, SpecReviewOpenEachRoleListensOnBothPorts) {
+    SystemClock clock;
+
+    EndpointConfig deviceConfig;
+    deviceConfig.role = Role::Device;
+    deviceConfig.peerHost = "127.0.0.1";
+    deviceConfig.bindAddress = "127.0.0.1";
+    deviceConfig.ports.mom = 0;
+    deviceConfig.ports.ro = 0;
+    Tcp28Endpoint device{deviceConfig, &clock};
+    ASSERT_TRUE(device.start().ok());
+    EXPECT_TRUE(device.listenPort(Channel::Ro).has_value());
+    EXPECT_TRUE(device.listenPort(Channel::Mom).has_value())
+        << "the device accepts nothing on the lower port (NCS-originated mosReqObj/mosReqAll)";
+    device.stop();
+
+    EndpointConfig ncsConfig;
+    ncsConfig.role = Role::Ncs;
+    ncsConfig.peerHost = "127.0.0.1";
+    ncsConfig.bindAddress = "127.0.0.1";
+    ncsConfig.ports.mom = 0;
+    ncsConfig.ports.ro = 0;
+    Tcp28Endpoint ncs{ncsConfig, &clock};
+    ASSERT_TRUE(ncs.start().ok());
+    EXPECT_TRUE(ncs.listenPort(Channel::Mom).has_value());
+    EXPECT_TRUE(ncs.listenPort(Channel::Ro).has_value())
+        << "the NCS accepts nothing on the upper port (MOS-originated roReq/roElementStat)";
+    ncs.stop();
+}
