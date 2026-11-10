@@ -77,9 +77,12 @@ Result<WallClockTime> parseSpecTime(std::string_view text) {
         return fail();
     }
 
-    // Fractional seconds: any precision, kept to milliseconds.
+    // Fractional seconds: any precision, kept to milliseconds. The spec is
+    // not consistent about the separator — §6 defines the field as
+    // "hh:mm:ss[,ddd]" (comma, exactly three digits) while its own roItemCue
+    // examples write "10:45:00.00" (dot, two digits) — so both are read.
     std::int64_t fractionMillis = 0;
-    if (pos < text.size() && text[pos] == '.') {
+    if (pos < text.size() && (text[pos] == ',' || text[pos] == '.')) {
         ++pos;
         int digits = 0;
         int scale = 100;
