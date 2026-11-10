@@ -94,10 +94,15 @@ diff-reverts it, acking on ro and surfacing `nextItemReplace()`);
 has the real 4.0 WebSocket client+server over IXWebSocket (`ws40_ixws`:
 auth, TLS surface, deflate, standard/passive topologies, host-pumped
 threading), the WASM client (`ws40_emscripten`), and the M6 legacy pair —
-`tcp28/` (`Tcp28Endpoint`, one role-configured class: device dials mom
-10540, NCS dials ro 10541 + aux 10542, own POSIX/Winsock2 socket layer, per-
-connection `StreamDeframer`, reply-on-arrival-socket, discrete-socket
-tolerance, `IMOS_ENABLE_COMPAT28` default ON) and `ws3_soap/`
+`tcp28/` (`Tcp28Endpoint`, one role-configured class running the spec's
+"two ports, four sockets": both roles listen on *and* dial mom 10540 and
+ro 10541, the device listens on aux 10542 and the NCS dials it; requests go
+out on the dialed socket and responses return on the arrival socket via
+`ITransport::sendReply`; `Topology::SingleDirection` is the one-socket-per-
+port opt-out, and such peers are still served; accepted connections are
+limited to the configured peer host; own POSIX/Winsock2 socket layer, per-
+connection `StreamDeframer`, discrete-socket tolerance,
+`IMOS_ENABLE_COMPAT28` default ON) and `ws3_soap/`
 (`Ws3Endpoint` + the pure `ws3_transform` module, `IMOS_ENABLE_WS3` default
 ON: 3.8.2-WSDL SOAP 1.1 document/literal over IXWebSocket HttpClient/
 HttpServer, hand-pinned per-op recipe tables + `ArrayOfX`/`_type` container

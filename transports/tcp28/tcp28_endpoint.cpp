@@ -24,7 +24,10 @@ namespace imos::transports::tcp28 {
 namespace {
 
 struct QueuedEvent {
-    enum class Kind : std::uint8_t { Connected, Disconnected, Frame, Diagnostic };
+    /// Connected/Disconnected are the session's view of the channel (some
+    /// connection is up / none is). DialUp/DialDown track only the socket
+    /// this endpoint dialed and feed its reconnect policy.
+    enum class Kind : std::uint8_t { Connected, Disconnected, DialUp, DialDown, Frame, Diagnostic };
     Kind kind = Kind::Frame;
     Channel channel = Channel::Mom;
     std::vector<std::uint8_t> frame;
@@ -36,6 +39,7 @@ struct Command {
     Kind kind = Kind::Send;
     Channel channel = Channel::Mom;
     std::vector<std::uint8_t> bytes;
+    bool reply = false;  ///< Send: a response, routed back to its arrival socket
 };
 
 /// One live TCP connection: its deframer state and any bytes the socket
@@ -43,13 +47,14 @@ struct Command {
 struct Connection {
     detail::SocketHandle fd = detail::kInvalidSocket;
     std::uint64_t id = 0;
+    bool dialed = false;  ///< opened by this endpoint (else accepted)
     framing::StreamDeframer deframer;
     std::size_t overflowsSeen = 0;
     std::vector<std::uint8_t> writeBuffer;
 
-    explicit Connection(detail::SocketHandle handle, std::uint64_t connId,
+    explicit Connection(detail::SocketHandle handle, std::uint64_t connId, bool dialedByUs,
                         const framing::DeframerOptions& options)
-        : fd(handle), id(connId), deframer(options) {}
+        : fd(handle), id(connId), dialed(dialedByUs), deframer(options) {}
 };
 
 constexpr int kPollTimeoutMillis = 250;
@@ -70,11 +75,14 @@ struct Tcp28Endpoint::Impl {
     struct ChannelState {
         bool enabled = false;
         bool dials = false;
+        bool listens = false;
         int boundPort = 0;  ///< listening channels; resolved before the thread starts
 
         detail::SocketHandle listenFd = detail::kInvalidSocket;
-        std::vector<std::unique_ptr<Connection>> connections;  ///< accepted, or the one dialed
-        std::uint64_t replyConnId = 0;  ///< the connection the last document arrived on
+        std::vector<std::unique_ptr<Connection>> connections;  ///< accepted + the one dialed
+        /// The accepted connection the last inbound document arrived on —
+        /// where the peer's requests come from, so where replies return.
+        std::uint64_t replyConnId = 0;
 
         detail::SocketHandle dialFd = detail::kInvalidSocket;  ///< connect in progress
         bool dialInProgress = false;
@@ -84,6 +92,7 @@ struct Tcp28Endpoint::Impl {
         // Pump-thread state (never touched by the I/O thread).
         std::unique_ptr<ReconnectPolicy> policy;
         bool sessionConnected = false;
+        bool dialUp = false;  ///< our dialed socket is live
     };
     std::array<ChannelState, kChannelCount> channels;
 
@@ -98,6 +107,32 @@ struct Tcp28Endpoint::Impl {
     std::deque<QueuedEvent> events;
 
     std::uint64_t nextConnId = 1;
+
+    // I/O-thread state for the accept filter.
+    std::vector<std::string> peerAddresses;
+    std::chrono::steady_clock::time_point peerAddressesResolvedAt{};
+
+    /// True when `remote` is the configured peer. The peer's addresses are
+    /// resolved lazily and re-resolved (rate-limited) on a miss, so a peer
+    /// whose DNS record moved is picked up without a restart.
+    bool peerAddressAllowed(const std::string& remote) {
+        if (!config.acceptOnlyPeerHost || config.peerHost.empty()) {
+            return true;
+        }
+        const auto known = [&] {
+            return std::find(peerAddresses.begin(), peerAddresses.end(), remote) !=
+                   peerAddresses.end();
+        };
+        if (known()) {
+            return true;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (peerAddresses.empty() || now - peerAddressesResolvedAt >= std::chrono::seconds{5}) {
+            peerAddresses = detail::resolveNumericAddresses(config.peerHost);
+            peerAddressesResolvedAt = now;
+        }
+        return known();
+    }
 
     ChannelState& channel(Channel c) { return channels[static_cast<std::size_t>(c)]; }
     const ChannelState& channel(Channel c) const { return channels[static_cast<std::size_t>(c)]; }
@@ -154,7 +189,7 @@ struct Tcp28Endpoint::Impl {
                     } else if (command.kind == Command::Kind::Dial) {
                         startDial(command.channel);
                     } else {
-                        queueSend(command.channel, std::move(command.bytes));
+                        queueSend(command.channel, std::move(command.bytes), command.reply);
                     }
                 }
             }
@@ -273,13 +308,13 @@ struct Tcp28Endpoint::Impl {
 
     void startDial(Channel channelId) {
         ChannelState& state = channel(channelId);
-        if (state.dialInProgress || !state.connections.empty()) {
+        if (state.dialInProgress || dialedConnection(state) != nullptr) {
             return;
         }
-        const int port = portFor(channelId);
+        const int port = peerPortFor(channelId);
         Result<detail::SocketHandle> attempt = detail::beginConnect(config.peerHost, port);
         if (!attempt.ok()) {
-            postEvent({QueuedEvent::Kind::Disconnected, channelId, {}, attempt.error().message});
+            postEvent({QueuedEvent::Kind::DialDown, channelId, {}, attempt.error().message});
             return;
         }
         state.dialFd = attempt.value();
@@ -300,29 +335,59 @@ struct Tcp28Endpoint::Impl {
         if (outcome < 0) {
             detail::closeSocket(state.dialFd);
             state.dialFd = detail::kInvalidSocket;
-            postEvent({QueuedEvent::Kind::Disconnected,
+            postEvent({QueuedEvent::Kind::DialDown,
                        channelId,
                        {},
-                       "connect to " + config.peerHost + ":" + std::to_string(portFor(channelId)) +
-                           " failed: " + error});
+                       "connect to " + config.peerHost + ":" +
+                           std::to_string(peerPortFor(channelId)) + " failed: " + error});
             return;
         }
-        state.connections.push_back(
-            std::make_unique<Connection>(state.dialFd, nextConnId++, deframerOptions()));
+        const bool first = state.connections.empty();
+        state.connections.push_back(std::make_unique<Connection>(
+            state.dialFd, nextConnId++, /*dialedByUs=*/true, deframerOptions()));
         state.dialFd = detail::kInvalidSocket;
-        state.replyConnId = state.connections.back()->id;
-        state.connected = true;
-        postEvent({QueuedEvent::Kind::Connected, channelId, {}, {}});
+        postEvent({QueuedEvent::Kind::DialUp, channelId, {}, {}});
+        if (first) {
+            state.connected = true;
+            postEvent({QueuedEvent::Kind::Connected, channelId, {}, {}});
+        }
+    }
+
+    static Connection* dialedConnection(ChannelState& state) {
+        for (const std::unique_ptr<Connection>& connection : state.connections) {
+            if (connection->dialed) {
+                return connection.get();
+            }
+        }
+        return nullptr;
+    }
+
+    static std::size_t acceptedCount(const ChannelState& state) {
+        return static_cast<std::size_t>(
+            std::count_if(state.connections.begin(), state.connections.end(),
+                          [](const std::unique_ptr<Connection>& c) { return !c->dialed; }));
     }
 
     void acceptPending(Channel channelId) {
         ChannelState& state = channel(channelId);
         while (state.listenFd != detail::kInvalidSocket) {
-            const detail::SocketHandle accepted = detail::acceptOne(state.listenFd);
+            std::string remote;
+            const detail::SocketHandle accepted = detail::acceptOne(state.listenFd, &remote);
             if (accepted == detail::kInvalidSocket) {
                 return;
             }
-            if (state.connections.size() >= config.maxConnectionsPerListener) {
+            if (!peerAddressAllowed(remote)) {
+                // 2.8 carries no credentials; the peer's address is the
+                // only thing that tells it from anyone else on the network.
+                detail::closeSocket(accepted);
+                postEvent({QueuedEvent::Kind::Diagnostic,
+                           channelId,
+                           {},
+                           "rejected connection from " + remote + ": not the configured peer " +
+                               config.peerHost});
+                continue;
+            }
+            if (acceptedCount(state) >= config.maxConnectionsPerListener) {
                 // Bound resource use (plan §12); the spec only requires
                 // tolerating a handful of sockets per port.
                 detail::closeSocket(accepted);
@@ -333,8 +398,8 @@ struct Tcp28Endpoint::Impl {
                 continue;
             }
             const bool first = state.connections.empty();
-            state.connections.push_back(
-                std::make_unique<Connection>(accepted, nextConnId++, deframerOptions()));
+            state.connections.push_back(std::make_unique<Connection>(
+                accepted, nextConnId++, /*dialedByUs=*/false, deframerOptions()));
             if (first) {
                 state.connected = true;
                 postEvent({QueuedEvent::Kind::Connected, channelId, {}, {}});
@@ -398,7 +463,9 @@ struct Tcp28Endpoint::Impl {
                            "deframer resynchronized past " +
                                std::to_string(frame->discardedBefore) + " garbage bytes"});
             }
-            channel(channelId).replyConnId = connection.id;
+            if (!connection.dialed) {
+                channel(channelId).replyConnId = connection.id;
+            }
             if (!stopping) {
                 postEvent({QueuedEvent::Kind::Frame, channelId, std::move(frame->document), {}});
             }
@@ -422,27 +489,40 @@ struct Tcp28Endpoint::Impl {
             return;
         }
         detail::closeSocket((*it)->fd);
+        const bool wasDialed = (*it)->dialed;
         state.connections.erase(it);
+        if (wasDialed) {
+            postEvent({QueuedEvent::Kind::DialDown, channelId, {}, reason});
+        }
         if (state.connections.empty()) {
             state.connected = false;
             postEvent({QueuedEvent::Kind::Disconnected, channelId, {}, reason});
         }
     }
 
-    void queueSend(Channel channelId, std::vector<std::uint8_t> bytes) {
+    void queueSend(Channel channelId, std::vector<std::uint8_t> bytes, bool reply) {
         ChannelState& state = channel(channelId);
-        Connection* target = nullptr;
-        // Reply on the socket the last message arrived on (2.8.5 rule);
-        // otherwise the newest live connection (a dialed channel has one).
+        // The peer's requests arrive on connections it opened: the accepted
+        // one the last document came in on (else the newest accepted).
+        Connection* inbound = nullptr;
         for (const std::unique_ptr<Connection>& connection : state.connections) {
+            if (connection->dialed) {
+                continue;
+            }
             if (connection->id == state.replyConnId) {
-                target = connection.get();
+                inbound = connection.get();
                 break;
             }
+            inbound = connection.get();
         }
-        if (target == nullptr && !state.connections.empty()) {
-            target = state.connections.back().get();
-        }
+        Connection* const outbound = dialedConnection(state);
+        // 2.8.5: a message goes out on a socket its sender opened, and its
+        // acknowledgment returns "down the same socket on which the
+        // original message was received". Each falls back to the other
+        // socket when a peer runs only one per port: such a peer sends its
+        // requests down our dialed socket, or takes ours on its own.
+        Connection* target = reply ? (inbound != nullptr ? inbound : outbound)
+                                   : (outbound != nullptr ? outbound : inbound);
         if (target == nullptr) {
             postEvent({QueuedEvent::Kind::Diagnostic,
                        channelId,
@@ -466,25 +546,44 @@ struct Tcp28Endpoint::Impl {
         }
     }
 
-    int portFor(Channel channelId) const {
+    static int pick(const ChannelPorts& ports, Channel channelId) {
         switch (channelId) {
             case Channel::Mom:
-                return config.ports.mom;
+                return ports.mom;
             case Channel::Ro:
-                return config.ports.ro;
+                return ports.ro;
             case Channel::Aux:
-                return config.ports.aux;
+                return ports.aux;
         }
         return 0;
     }
+    int listenPortFor(Channel channelId) const { return pick(config.ports, channelId); }
+    int peerPortFor(Channel channelId) const { return pick(config.peerPorts, channelId); }
 };
 
-bool Tcp28Endpoint::dialsChannel(Role role, Channel channel) noexcept {
-    // 2.8.5 "Message Transport": the NCS accepts connections on the lower
-    // port (mom), the MOS accepts on the upper port (ro); the query port
-    // (aux) carries NCS-initiated searches, so the MOS listens there too.
-    const bool deviceDials = channel == Channel::Mom;
-    return role == Role::Device ? deviceDials : !deviceDials;
+bool Tcp28Endpoint::dialsChannel(Role role, Channel channel, Topology topology) noexcept {
+    if (channel == Channel::Aux) {
+        return role == Role::Ncs;  // only the NCS (or an NCS client) queries
+    }
+    if (topology == Topology::FourSockets) {
+        // 2.8.5 "Message Transport": both ports are used bi-directionally;
+        // each side opens a socket for the messages it originates.
+        return true;
+    }
+    // One socket per port, opened by its traditional originator: the MOS
+    // connects to the NCS's lower port, the NCS to the MOS's upper port.
+    return role == Role::Device ? channel == Channel::Mom : channel == Channel::Ro;
+}
+
+bool Tcp28Endpoint::listensOnChannel(Role role, Channel channel, Topology topology) noexcept {
+    if (channel == Channel::Aux) {
+        return role == Role::Device;
+    }
+    if (topology == Topology::FourSockets) {
+        // "Applications will simultaneously listen for messages on both ports."
+        return true;
+    }
+    return !dialsChannel(role, channel, topology);
 }
 
 Tcp28Endpoint::Tcp28Endpoint(EndpointConfig config, IClock* clock, IRandom* random, ILogger* logger)
@@ -498,7 +597,8 @@ Tcp28Endpoint::Tcp28Endpoint(EndpointConfig config, IClock* clock, IRandom* rand
         const auto channelId = static_cast<Channel>(i);
         Impl::ChannelState& state = impl_->channels[i];
         state.enabled = channelId != Channel::Aux || impl_->config.enableAux;
-        state.dials = dialsChannel(impl_->config.role, channelId);
+        state.dials = dialsChannel(impl_->config.role, channelId, impl_->config.topology);
+        state.listens = listensOnChannel(impl_->config.role, channelId, impl_->config.topology);
         if (state.enabled && state.dials) {
             state.policy =
                 std::make_unique<ReconnectPolicy>(impl_->config.reconnect, clock, random);
@@ -521,11 +621,11 @@ Result<void> Tcp28Endpoint::start() {
     // before any thread exists.
     for (std::size_t i = 0; i < kChannelCount; ++i) {
         Impl::ChannelState& state = impl_->channels[i];
-        if (!state.enabled || state.dials) {
+        if (!state.enabled || !state.listens) {
             continue;
         }
         int boundPort =
-            state.boundPort != 0 ? state.boundPort : impl_->portFor(static_cast<Channel>(i));
+            state.boundPort != 0 ? state.boundPort : impl_->listenPortFor(static_cast<Channel>(i));
         Result<detail::SocketHandle> listener =
             detail::listenOn(impl_->config.bindAddress, boundPort, boundPort);
         if (!listener.ok()) {
@@ -578,8 +678,25 @@ Result<void> Tcp28Endpoint::send(Channel channel, std::span<const std::uint8_t> 
                                                  std::string{channelName(channel)} +
                                                  " channel is not connected");
     }
-    impl_->postCommand(
-        {Command::Kind::Send, channel, std::vector<std::uint8_t>{frame.begin(), frame.end()}});
+    impl_->postCommand({Command::Kind::Send, channel,
+                        std::vector<std::uint8_t>{frame.begin(), frame.end()}, /*reply=*/false});
+    return {};
+}
+
+Result<void> Tcp28Endpoint::sendReply(Channel channel, std::span<const std::uint8_t> frame) {
+    const Impl::ChannelState& state = impl_->channel(channel);
+    if (!state.enabled) {
+        return makeError(
+            ErrorCode::InvalidArgument,
+            std::string{"tcp28 "} + std::string{channelName(channel)} + " channel is not enabled");
+    }
+    if (!state.connected.load()) {
+        return makeError(ErrorCode::IoError, std::string{"tcp28 "} +
+                                                 std::string{channelName(channel)} +
+                                                 " channel is not connected");
+    }
+    impl_->postCommand({Command::Kind::Send, channel,
+                        std::vector<std::uint8_t>{frame.begin(), frame.end()}, /*reply=*/true});
     return {};
 }
 
@@ -596,17 +713,27 @@ void Tcp28Endpoint::pump(PeerSession& session) {
     for (QueuedEvent& event : local) {
         Impl::ChannelState& state = impl_->channel(event.channel);
         switch (event.kind) {
-            case QueuedEvent::Kind::Connected:
+            case QueuedEvent::Kind::DialUp:
+                state.dialUp = true;
                 if (state.policy != nullptr) {
                     state.policy->onConnected();
                 }
+                break;
+            case QueuedEvent::Kind::DialDown:
+                state.dialUp = false;
+                if (state.policy != nullptr) {
+                    state.policy->onDisconnected();
+                }
+                if (!event.diagnostic.empty()) {
+                    impl_->log(LogLevel::Debug, std::string{channelName(event.channel)} +
+                                                    " dial down: " + event.diagnostic);
+                }
+                break;
+            case QueuedEvent::Kind::Connected:
                 state.sessionConnected = true;
                 session.onChannelConnected(event.channel);
                 break;
             case QueuedEvent::Kind::Disconnected:
-                if (state.policy != nullptr) {
-                    state.policy->onDisconnected();
-                }
                 if (!event.diagnostic.empty()) {
                     impl_->log(LogLevel::Debug, std::string{channelName(event.channel)} +
                                                     " channel down: " + event.diagnostic);
@@ -633,7 +760,7 @@ void Tcp28Endpoint::pump(PeerSession& session) {
     }
     for (std::size_t i = 0; i < kChannelCount; ++i) {
         Impl::ChannelState& state = impl_->channels[i];
-        if (!state.enabled || !state.dials || state.sessionConnected || state.policy == nullptr) {
+        if (!state.enabled || !state.dials || state.dialUp || state.policy == nullptr) {
             continue;
         }
         if (state.policy->shouldAttempt()) {
@@ -648,7 +775,7 @@ void Tcp28Endpoint::setErrorHandler(Tcp28ErrorHandler handler) {
 
 std::optional<int> Tcp28Endpoint::listenPort(Channel channel) const {
     const Impl::ChannelState& state = impl_->channel(channel);
-    if (!state.enabled || state.dials || state.boundPort == 0) {
+    if (!state.enabled || !state.listens || state.boundPort == 0) {
         return std::nullopt;
     }
     return state.boundPort;

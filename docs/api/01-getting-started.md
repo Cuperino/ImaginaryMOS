@@ -99,7 +99,8 @@ imos::SessionConfig session;
 session.mosID = "acme.vtr.example";     // this/the peer device's MOS ID
 session.ncsID = "newsroom.example.com"; // this/the peer NCS ID
 session.retryTimeoutMillis     = 10'000; // ack timeout (< the 60 s spec ceiling)
-session.maxRetries             = 3;      // then the link faults
+session.maxRetries             = 3;      // then the link faults...
+session.faultRetryIntervalMillis = 60'000; // ...and the message is retried at this cadence
 session.keepAliveIntervalMillis = 30'000; // spec floor; 0 disables
 // §3.4 wire encoding — UCS-2 big-endian on binary frames is the 4.0 default.
 session.wireEncode.encoding = imos::encoding::WireEncoding::Ucs2Be;

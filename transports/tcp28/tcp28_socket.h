@@ -77,7 +77,13 @@ int connectFinished(SocketHandle socket, std::string& error);
 /// listening socket; `boundPort` reports the resolved port.
 Result<SocketHandle> listenOn(const std::string& address, int port, int& boundPort);
 /// Accept one pending connection, non-blocking; kInvalidSocket when none.
-SocketHandle acceptOne(SocketHandle listener);
+/// `remoteAddress`, when given, receives the peer's numeric address (an
+/// IPv4-mapped IPv6 address is reported in its plain IPv4 form).
+SocketHandle acceptOne(SocketHandle listener, std::string* remoteAddress = nullptr);
+
+/// Every numeric address `host` resolves to (same normalization as
+/// acceptOne), for matching accepted connections against a configured peer.
+std::vector<std::string> resolveNumericAddresses(const std::string& host);
 
 /// A self-wake pipe the I/O thread polls alongside the sockets: wake()
 /// makes the read end readable, drain() consumes pending wakes. pipe(2) on

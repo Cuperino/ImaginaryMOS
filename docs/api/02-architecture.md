@@ -88,9 +88,17 @@ enforces the spec §3.3 reliability rules:
 
 - **in-flight-of-one** strictly sequential delivery, with the three channels
   mutually independent;
-- **retry on ack timeout** with capped retries, then link-fault escalation;
+- **retry on ack timeout** with capped retries, then link-fault escalation
+  (`DeliveryFailed` + `ChannelFault`, once) — after which the head message
+  keeps being re-sent at a slow cadence (`faultRetryIntervalMillis`) for as
+  long as the connection stays up, and a late reply clears the fault;
 - **durable-before-send** buffering through `IMessageStore`;
-- inbound **`messageID` dedupe** so a peer's retransmit is idempotent;
+- inbound **`messageID` dedupe** so a peer's retransmitted command is
+  idempotent (it is re-acked with the verdict it first got; information
+  requests are simply answered again), and a persistent outbound
+  `messageID` counter;
+- **peer identity**: a message whose envelope names a different
+  `mosID`/`ncsID` pairing is dropped with a `ProtocolError`;
 - **heartbeat/keepAlive** on idle (never faster than the 30-second floor).
 
 Two seams matter when reading the profile code:

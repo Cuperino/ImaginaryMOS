@@ -22,15 +22,31 @@ per-channel in-flight-of-one, and already speaks any `WireEncoding`.
 
 ### 1.1 Facts pinned from the 2.8.5 spec
 
-- **Ports and directions** ("Message Transport"): the **NCS listens** on the
-  MOS Lower Port **10540** (Media Object Metadata — our `mom`); the **MOS
-  listens** on the MOS Upper Port **10541** (Running Order — our `ro`).
-  Port **10542** carries the `mosReqObjList` family (our `aux`); the NCS (or
-  NCS client) *initiates* those queries, so the **MOS listens** on 10542.
-  Ports are examples/site-configurable since 2.5 — all three are config knobs.
-- **Bidirectional sockets, ack on arrival socket**: both ports are used
-  bi-directionally; "the acknowledgment of a message will be sent down the
-  same socket on which the original message was received."
+- **Ports and directions** ("Message Transport") — **revised 2026-11-10; the
+  spec overrides the earlier reading of this section.** The section opens by
+  naming the lower port **10540** (`mom`) as where the NCS accepts
+  connections from MOS devices and the upper port **10541** (`ro`) as where
+  the MOS accepts connections from the NCS, and the first version of this
+  plan stopped there: one listener per port, one direction per role. The
+  same section goes on: "MOS uses two ports bi-directionally. **Applications
+  will simultaneously listen for messages on both ports**", "Both the NCS
+  and MOS can originate messages", and the "Two Ports - Four Sockets" note
+  has each machine handling at least two sockets per port. So **both roles
+  listen on both `mom` and `ro`, and both dial the peer's `mom` and `ro`**
+  for the messages they originate there (an NCS's `mosReqObj`/`mosReqAll`
+  on the lower port, a MOS's `roReq`/`roElementStat`/`mosItemReplace` on the
+  upper port). A one-direction endpoint refuses exactly those dials.
+  Port **10542** carries the `mosReqObjList` family (our `aux`); only the
+  NCS (or an NCS client) originates there, so the **MOS listens** on 10542
+  and the NCS dials — that port stays one-way.
+  Ports are examples/site-configurable since 2.5 — all are config knobs.
+- **Ack on arrival socket**: "the acknowledgment of a message will be sent
+  down the same socket on which the original message was received." With
+  two sockets per port this is a routing rule, not a by-product: requests
+  go out on the socket this side dialed, responses return on the accepted
+  socket the peer's request came in on.
+- **No authentication.** 2.8 has none; the peer's network address is the
+  only thing separating it from any other host that can reach the ports.
 - **Discrete-session tolerance**: peers may open a fresh socket per message
   ("though this is not very efficient") and must be handled; each listener
   must accept **multiple simultaneous connections** (two-ports-four-sockets
@@ -60,13 +76,25 @@ packaging story already ships one transports archive).
   involvement (deliberate, plan §5.2). Guarded by `IMOS_ENABLE_COMPAT28`
   (already an option; ON by default, OFF under Emscripten).
 - **`Tcp28Endpoint`** (`transports/include/imos/transports/tcp28.h`):
-  *one* class for both roles — unlike WS there is no client/server split;
-  each role dials some channels and listens on others:
-  - Device role: **dials** peer `mom` (10540), **listens** `ro` (10541) and
-    `aux` (10542).
-  - NCS role: **listens** `mom`, **dials** `ro` and `aux`.
-  - `aux` is optional (off unless the host enables it — P3 peers only).
-  Config: role, peer host, per-channel ports, local bind address,
+  *one* class for both roles — unlike WS there is no client/server split.
+  Default `Topology::FourSockets` (the spec's scheme):
+  - both roles **listen** on `mom` and `ro` and **dial** the peer's `mom`
+    and `ro`;
+  - `aux`: the device **listens**, the NCS **dials**; optional (off unless
+    the host enables it — P3 peers only).
+  `Topology::SingleDirection` is the opt-out for sites that must not open
+  the reverse listeners (device dials `mom`, listens `ro`/`aux`; NCS the
+  mirror) — the pre-revision behaviour.
+  A FourSockets endpoint still interoperates with a peer that runs one
+  socket per port: where the peer does not accept our dial, our requests
+  ride the peer's own connection, and its requests arriving down our dialed
+  socket are answered there; the refused dial just keeps retrying on the
+  reconnect policy without disturbing the session.
+  Config: role, topology, peer host, listen ports (`ports`) and the peer's
+  ports (`peerPorts` — separate so two endpoints can share a host), local
+  bind address, `acceptOnlyPeerHost` (default on: accepted connections must
+  come from an address `peerHost` resolves to; others are closed with a
+  diagnostic — the only access control a credential-less protocol allows),
   `WireEncoding` (default `Ucs2Be`; `Ucs2Le` observed in the field is a
   dialect knob), `DeframerOptions` cap, reconnect policy (reuses
   `ReconnectPolicy`), heartbeat is the session's business (config unchanged).
@@ -75,19 +103,24 @@ packaging story already ships one transports archive).
   `pump(PeerSession&)` from its own loop to drain connectivity events and
   deframed documents into the session, and `send()` enqueues to the I/O
   thread. The core is never touched from the I/O thread.
-- **Send path**: `send(channel, frame)` writes the already-encoded bytes on
-  the socket currently bound to that channel — for a listening channel, the
-  most recent *live* accepted connection (reply-on-arrival-socket falls out
-  naturally because acks are sent while that connection is current); for a
-  dialing channel, the held outbound connection (dialed on demand /
-  reconnected per policy). Not connected → `ErrorCode::NotConnected`
-  (session retry logic already covers the gap).
+- **Send path**: the session tells the transport whether a frame is a
+  request or a response (`ITransport::send` vs `ITransport::sendReply`; the
+  latter defaults to `send`, so single-connection transports are
+  unaffected). `send` writes on the socket this endpoint dialed, falling
+  back to the peer's connection when there is none; `sendReply` writes on
+  the accepted connection the peer's last document arrived on, falling back
+  to the dialed socket. A response that must keep queue order (the `roList`
+  answering a `roReq`) goes through `PeerSession::enqueueOrderedReply`, so
+  it is still routed as a response. The channel is "connected" for the
+  session while *any* connection on it is up. No connection →
+  `ErrorCode::IoError` (session retry logic already covers the gap).
 - **Receive path**: per-connection `StreamDeframer` (wire-encoding aware);
   each complete document is queued as one inbound frame for `pump()`.
   Deframer discards/overflows surface as transport diagnostics.
 - **Accept policy**: multiple simultaneous connections per listener are
-  accepted (spec requires ≥2); the newest connection that *delivers bytes*
-  becomes the channel's reply socket. Idle extra connections are harmless
+  accepted (spec requires ≥2), from the configured peer host only unless
+  `acceptOnlyPeerHost` is off; the newest accepted connection that
+  *delivers bytes* becomes the channel's reply socket. Idle extra connections are harmless
   and reaped on EOF. A per-listener connection cap (default modest, e.g. 8)
   bounds resource use (plan §12 posture).
 - **Shutdown**: `stop()` performs orderly `shutdown(write)` + bounded drain
@@ -106,6 +139,11 @@ packaging story already ships one transports archive).
   - split/coalesced TCP delivery (byte-dribble and multi-doc writes) through
     the deframer;
   - reconnect-after-drop on a dialed channel; ack-on-arrival-socket check;
+  - four-socket scheme: every role listens on both ports; a raw peer dialing
+    the device's lower port is answered on its own socket; a
+    `SingleDirection` peer is served both ways on both ports; a connection
+    from a host other than the configured peer is refused (and accepted
+    with the filter off);
   - conformance re-runs over the TCP pair for **every wire profile**
     (extended past the original P1/P2 scope on 2026-07-19): P1 object
     workflow, P2 authoring/status, P3 three-channel with real aux-port

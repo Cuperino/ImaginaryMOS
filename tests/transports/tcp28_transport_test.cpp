@@ -35,6 +35,14 @@
 #include <imos/transports/tcp28.h>
 #include <incs/ncs.h>
 
+#if !defined(_WIN32)
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
+
 using imos::Channel;
 using imos::MonotonicTime;
 using imos::PeerSession;
@@ -52,6 +60,7 @@ using imos::transports::tcp28::ChannelPorts;
 using imos::transports::tcp28::EndpointConfig;
 using imos::transports::tcp28::Role;
 using imos::transports::tcp28::Tcp28Endpoint;
+using imos::transports::tcp28::Topology;
 
 namespace {
 
@@ -113,6 +122,25 @@ int pickFreePort(imos::IClock& clock) {
     return port;
 }
 
+/// Two endpoints on one host cannot share the site-wide port numbers: each
+/// listens on its own mom/ro pair and dials the other's. `primary` holds the
+/// traditional listeners (NCS mom, device ro/aux); the reverse pair (device
+/// mom, NCS ro) is picked here.
+struct PortPlan {
+    ChannelPorts deviceListen;
+    ChannelPorts ncsListen;
+};
+
+PortPlan planPorts(const ChannelPorts& primary, imos::IClock& clock) {
+    PortPlan plan;
+    plan.ncsListen.mom = primary.mom;
+    plan.ncsListen.ro = pickFreePort(clock);
+    plan.deviceListen.mom = pickFreePort(clock);
+    plan.deviceListen.ro = primary.ro;
+    plan.deviceListen.aux = primary.aux;
+    return plan;
+}
+
 std::vector<std::uint8_t> encodeWire(const std::string& utf8) {
     imos::Result<std::vector<std::uint8_t>> wire = imos::encoding::encodeFromUtf8(utf8, {});
     EXPECT_TRUE(wire.ok());
@@ -132,6 +160,10 @@ struct Rig {
     imos::InMemoryMessageStore ncsStore;
 
     ChannelPorts ports;
+    // Per-test knobs, set before start().
+    bool startNcs = true;                          ///< false: the device endpoint stands alone
+    Topology ncsTopology = Topology::FourSockets;  ///< the NCS's socket scheme
+    bool deviceAcceptOnlyPeerHost = true;
     std::unique_ptr<Tcp28Endpoint> deviceEndpoint;
     std::unique_ptr<Tcp28Endpoint> ncsEndpoint;
     std::unique_ptr<PeerSession> deviceSession;
@@ -158,27 +190,34 @@ struct Rig {
         ncsConfig.role = Role::Ncs;
         ncsConfig.peerHost = "127.0.0.1";
         ncsConfig.bindAddress = "127.0.0.1";
-        ncsConfig.ports = ports;
+        const PortPlan plan = planPorts(ports, clock);
+        ncsConfig.ports = plan.ncsListen;
+        ncsConfig.peerPorts = plan.deviceListen;
         ncsConfig.enableAux = withAux;
+        ncsConfig.topology = ncsTopology;
         ncsConfig.reconnect.initialDelayMillis = 50;
         ncsConfig.reconnect.maxDelayMillis = 200;
-        ncsEndpoint = std::make_unique<Tcp28Endpoint>(ncsConfig, &clock);
-        ncsEndpoint->setErrorHandler([this](Channel channel, const std::string& diagnostic) {
-            ncsDiagnostics.emplace_back(channel, diagnostic);
-        });
-        ncsSession = std::make_unique<PeerSession>(
-            sessionConfig(), PeerSession::Dependencies{&clock, ncsEndpoint.get(), &ncsStore});
-        if (withResponders) {
-            ncsResponder = std::make_unique<Profile0Responder>(machineInfo(DeviceType::Ncs),
-                                                               ncsSession.get(), &clock);
+        if (startNcs) {
+            ncsEndpoint = std::make_unique<Tcp28Endpoint>(ncsConfig, &clock);
+            ncsEndpoint->setErrorHandler([this](Channel channel, const std::string& diagnostic) {
+                ncsDiagnostics.emplace_back(channel, diagnostic);
+            });
+            ncsSession = std::make_unique<PeerSession>(
+                sessionConfig(), PeerSession::Dependencies{&clock, ncsEndpoint.get(), &ncsStore});
+            if (withResponders) {
+                ncsResponder = std::make_unique<Profile0Responder>(machineInfo(DeviceType::Ncs),
+                                                                   ncsSession.get(), &clock);
+            }
         }
 
         EndpointConfig deviceConfig;
         deviceConfig.role = Role::Device;
         deviceConfig.peerHost = "127.0.0.1";
         deviceConfig.bindAddress = "127.0.0.1";
-        deviceConfig.ports = ports;
+        deviceConfig.ports = plan.deviceListen;
+        deviceConfig.peerPorts = plan.ncsListen;
         deviceConfig.enableAux = withAux;
+        deviceConfig.acceptOnlyPeerHost = deviceAcceptOnlyPeerHost;
         deviceConfig.reconnect.initialDelayMillis = 50;
         deviceConfig.reconnect.maxDelayMillis = 200;
         deviceEndpoint = std::make_unique<Tcp28Endpoint>(deviceConfig, &clock);
@@ -192,7 +231,9 @@ struct Rig {
                                                                   deviceSession.get(), &clock);
         }
 
-        ASSERT_TRUE(ncsEndpoint->start().ok());
+        if (startNcs) {
+            ASSERT_TRUE(ncsEndpoint->start().ok());
+        }
         ASSERT_TRUE(deviceEndpoint->start().ok());
     }
 
@@ -495,7 +536,9 @@ struct FacadeRig {
         ncsConfig.role = Role::Ncs;
         ncsConfig.peerHost = "127.0.0.1";
         ncsConfig.bindAddress = "127.0.0.1";
-        ncsConfig.ports = ports;
+        const PortPlan plan = planPorts(ports, clock);
+        ncsConfig.ports = plan.ncsListen;
+        ncsConfig.peerPorts = plan.deviceListen;
         ncsConfig.enableAux = withAux;
         ncsConfig.wireEncoding = encoding;
         ncsConfig.reconnect.initialDelayMillis = 50;
@@ -508,7 +551,8 @@ struct FacadeRig {
         deviceConfig.role = Role::Device;
         deviceConfig.peerHost = "127.0.0.1";
         deviceConfig.bindAddress = "127.0.0.1";
-        deviceConfig.ports = ports;
+        deviceConfig.ports = plan.deviceListen;
+        deviceConfig.peerPorts = plan.ncsListen;
         deviceConfig.enableAux = withAux;
         deviceConfig.wireEncoding = encoding;
         deviceConfig.reconnect.initialDelayMillis = 50;
@@ -917,43 +961,231 @@ TEST(Tcp28Transport, Profile2RunningOrderWorkflowOverTcp) {
     rig.stop();
 }
 
-// ---- spec-review finding, still open ---------------------------------------
+// ---- 2.8.5 "Two Ports - Four Sockets" ---------------------------------------
 //
-// 2.8.5 "Message Transport": "MOS uses two ports bi-directionally.
-// Applications will simultaneously listen for messages on both ports", and
-// the "Two Ports - Four Sockets" note has each machine accepting connections
-// on each port. Tcp28Endpoint gives every role exactly one direction per
-// channel (reference/m6-plan.md §1.1): the device never listens on the lower
-// port and the NCS never listens on the upper port, so a peer that dials the
-// port for the messages *it* originates there — an NCS sending mosReqAll to
-// the device's 10540, a device sending roElementStat to the NCS's 10541 — is
-// refused. Expected to fail until the endpoint listens on both.
-TEST(Tcp28Transport, SpecReviewOpenEachRoleListensOnBothPorts) {
+// "MOS uses two ports bi-directionally. Applications will simultaneously
+// listen for messages on both ports": every role accepts connections on the
+// lower and the upper port, and dials the peer's for the messages it
+// originates. Only the query port is one-way (the MOS listens, the NCS
+// dials).
+TEST(Tcp28Transport, EachRoleListensOnBothPorts) {
     SystemClock clock;
 
     EndpointConfig deviceConfig;
     deviceConfig.role = Role::Device;
     deviceConfig.peerHost = "127.0.0.1";
     deviceConfig.bindAddress = "127.0.0.1";
-    deviceConfig.ports.mom = 0;
-    deviceConfig.ports.ro = 0;
+    deviceConfig.enableAux = true;
+    deviceConfig.ports = ChannelPorts{0, 0, 0};
     Tcp28Endpoint device{deviceConfig, &clock};
     ASSERT_TRUE(device.start().ok());
     EXPECT_TRUE(device.listenPort(Channel::Ro).has_value());
     EXPECT_TRUE(device.listenPort(Channel::Mom).has_value())
         << "the device accepts nothing on the lower port (NCS-originated mosReqObj/mosReqAll)";
+    EXPECT_TRUE(device.listenPort(Channel::Aux).has_value());
     device.stop();
 
     EndpointConfig ncsConfig;
     ncsConfig.role = Role::Ncs;
     ncsConfig.peerHost = "127.0.0.1";
     ncsConfig.bindAddress = "127.0.0.1";
-    ncsConfig.ports.mom = 0;
-    ncsConfig.ports.ro = 0;
+    ncsConfig.enableAux = true;
+    ncsConfig.ports = ChannelPorts{0, 0, 0};
     Tcp28Endpoint ncs{ncsConfig, &clock};
     ASSERT_TRUE(ncs.start().ok());
     EXPECT_TRUE(ncs.listenPort(Channel::Mom).has_value());
     EXPECT_TRUE(ncs.listenPort(Channel::Ro).has_value())
         << "the NCS accepts nothing on the upper port (MOS-originated roReq/roElementStat)";
+    EXPECT_FALSE(ncs.listenPort(Channel::Aux).has_value());  // queries are NCS → MOS only
     ncs.stop();
+
+    // The opt-out keeps one socket per port, opened by its traditional
+    // originator.
+    EXPECT_TRUE(Tcp28Endpoint::dialsChannel(Role::Device, Channel::Mom, Topology::SingleDirection));
+    EXPECT_FALSE(Tcp28Endpoint::dialsChannel(Role::Device, Channel::Ro, Topology::SingleDirection));
+    EXPECT_FALSE(
+        Tcp28Endpoint::listensOnChannel(Role::Device, Channel::Mom, Topology::SingleDirection));
+    EXPECT_TRUE(
+        Tcp28Endpoint::listensOnChannel(Role::Ncs, Channel::Mom, Topology::SingleDirection));
+    EXPECT_FALSE(
+        Tcp28Endpoint::listensOnChannel(Role::Ncs, Channel::Ro, Topology::SingleDirection));
 }
+
+// A peer that runs one socket per port (it listens on mom only and dials ro
+// only) is still served in both directions on both ports: its own
+// connection carries our requests where it does not accept ours, and its
+// requests arriving down our dialed socket are answered there.
+TEST(Tcp28Transport, SingleDirectionPeerIsServedBothWaysOnBothPorts) {
+    Rig rig;
+    rig.ncsTopology = Topology::SingleDirection;
+    rig.start();
+    ASSERT_TRUE(rig.waitForLink());
+
+    for (const Channel channel : {Channel::Mom, Channel::Ro}) {
+        rig.deviceEvents.clear();
+        rig.ncsEvents.clear();
+        ASSERT_TRUE(
+            rig.deviceSession->enqueue(channel, makeMessage(MessageType::ReqMachInfo)).ok());
+        ASSERT_TRUE(rig.waitFor([&] {
+            return findAck(rig.deviceEvents, MessageType::ListMachInfo) != nullptr;
+        })) << "device → NCS on "
+            << imos::channelName(channel);
+        ASSERT_TRUE(rig.ncsSession->enqueue(channel, makeMessage(MessageType::ReqMachInfo)).ok());
+        ASSERT_TRUE(rig.waitFor([&] {
+            return findAck(rig.ncsEvents, MessageType::ListMachInfo) != nullptr;
+        })) << "NCS → device on "
+            << imos::channelName(channel);
+    }
+    rig.deviceEndpoint->stop();
+    rig.ncsEndpoint->stop();
+}
+
+#if !defined(_WIN32)
+
+/// A bare TCP client standing in for a foreign implementation: connects to
+/// a loopback port (optionally from a chosen source address), writes, and
+/// reads whatever comes back.
+class RawClient {
+public:
+    RawClient() = default;
+    RawClient(const RawClient&) = delete;
+    RawClient& operator=(const RawClient&) = delete;
+    ~RawClient() { close(); }
+
+    bool connectTo(int port, const char* sourceAddress = nullptr) {
+        fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (fd_ < 0) {
+            return false;
+        }
+        if (sourceAddress != nullptr) {
+            sockaddr_in local = {};
+            local.sin_family = AF_INET;
+            ::inet_pton(AF_INET, sourceAddress, &local.sin_addr);
+            if (::bind(fd_, reinterpret_cast<const sockaddr*>(&local), sizeof(local)) != 0) {
+                return false;
+            }
+        }
+        sockaddr_in remote = {};
+        remote.sin_family = AF_INET;
+        remote.sin_port = htons(static_cast<std::uint16_t>(port));
+        ::inet_pton(AF_INET, "127.0.0.1", &remote.sin_addr);
+        return ::connect(fd_, reinterpret_cast<const sockaddr*>(&remote), sizeof(remote)) == 0;
+    }
+
+    bool write(const std::vector<std::uint8_t>& bytes) const {
+        return ::send(fd_, bytes.data(), bytes.size(), MSG_NOSIGNAL) ==
+               static_cast<ssize_t>(bytes.size());
+    }
+
+    /// Non-blocking drain into `received`; false once the peer has closed.
+    bool poll() {
+        pollfd entry{fd_, POLLIN, 0};
+        while (!closed_ && ::poll(&entry, 1, 0) > 0) {
+            std::uint8_t buffer[4096];
+            const ssize_t got = ::recv(fd_, buffer, sizeof(buffer), 0);
+            if (got <= 0) {
+                closed_ = true;
+                break;
+            }
+            received.insert(received.end(), buffer, buffer + got);
+        }
+        return !closed_;
+    }
+
+    [[nodiscard]] bool closedByPeer() const { return closed_; }
+
+    void close() {
+        if (fd_ >= 0) {
+            ::close(fd_);
+            fd_ = -1;
+        }
+    }
+
+    std::vector<std::uint8_t> received;
+
+private:
+    int fd_ = -1;
+    bool closed_ = false;
+};
+
+// An NCS that dials the device's lower port for the messages it originates
+// there (mosReqObj, mosReqAll, reqMachInfo) is accepted, and the answer
+// returns "down the same socket on which the original message was received".
+TEST(Tcp28Transport, PeerDialingTheLowerPortIsAnsweredOnItsOwnSocket) {
+    Rig rig;
+    rig.startNcs = false;
+    rig.start();
+    const int lowerPort = rig.deviceEndpoint->listenPort(Channel::Mom).value_or(0);
+    ASSERT_NE(lowerPort, 0);
+
+    RawClient ncs;
+    ASSERT_TRUE(ncs.connectTo(lowerPort));
+    ASSERT_TRUE(ncs.write(encodeWire(envelope("77", "<reqMachInfo/>"))));
+    ASSERT_TRUE(rig.waitFor([&] {
+        ncs.poll();
+        const auto decoded = imos::encoding::decodeToUtf8(ncs.received, {});
+        return decoded.ok() && decoded.value().find("</mos>") != std::string::npos;
+    }));
+    const auto reply =
+        imos::codec::parseMessage(imos::encoding::decodeToUtf8(ncs.received, {}).value());
+    ASSERT_TRUE(reply.ok());
+    EXPECT_EQ(reply.value().type(), MessageType::ListMachInfo);
+    EXPECT_EQ(reply.value().messageID().value_or(""), "77");
+    ncs.close();
+    rig.deviceEndpoint->stop();
+}
+
+#if defined(__linux__)
+// MOS 2.8 carries no credentials, so the peer's address is all that tells
+// it from anyone else who can reach the port. A connection from a host
+// other than the configured peer is refused before a byte is read. (Linux
+// only: it routes all of 127.0.0.0/8 to loopback, which gives the test a
+// second source address.)
+TEST(Tcp28Transport, ConnectionsFromOtherHostsAreRefused) {
+    const std::string readyToAir =
+        envelope("88", "<roReadyToAir><roID>R</roID><roAir>READY</roAir></roReadyToAir>");
+    {
+        Rig rig;
+        rig.startNcs = false;
+        rig.start(/*withResponders=*/false);
+        const int upperPort = rig.deviceEndpoint->listenPort(Channel::Ro).value_or(0);
+        ASSERT_NE(upperPort, 0);
+
+        RawClient stranger;
+        ASSERT_TRUE(stranger.connectTo(upperPort, "127.0.0.2"));
+        (void)stranger.write(encodeWire(readyToAir));
+        ASSERT_TRUE(rig.waitFor([&] {
+            stranger.poll();
+            return stranger.closedByPeer();
+        })) << "a connection from 127.0.0.2 was kept although the peer is 127.0.0.1";
+        EXPECT_EQ(countReceived(rig.deviceEvents, MessageType::RoReadyToAir), 0);
+        EXPECT_FALSE(rig.deviceEndpoint->isConnected(Channel::Ro));
+        ASSERT_TRUE(rig.waitFor([&] { return !rig.deviceDiagnostics.empty(); }));
+        EXPECT_NE(rig.deviceDiagnostics.front().second.find("127.0.0.2"), std::string::npos);
+
+        // The configured peer itself is of course let in.
+        RawClient peer;
+        ASSERT_TRUE(peer.connectTo(upperPort));
+        ASSERT_TRUE(peer.write(encodeWire(readyToAir)));
+        ASSERT_TRUE(rig.waitFor(
+            [&] { return countReceived(rig.deviceEvents, MessageType::RoReadyToAir) == 1; }));
+        rig.deviceEndpoint->stop();
+    }
+    {
+        // The opt-out (NAT, a multi-homed NCS): any source is accepted.
+        Rig rig;
+        rig.startNcs = false;
+        rig.deviceAcceptOnlyPeerHost = false;
+        rig.start(/*withResponders=*/false);
+        const int upperPort = rig.deviceEndpoint->listenPort(Channel::Ro).value_or(0);
+        RawClient other;
+        ASSERT_TRUE(other.connectTo(upperPort, "127.0.0.2"));
+        ASSERT_TRUE(other.write(encodeWire(readyToAir)));
+        ASSERT_TRUE(rig.waitFor(
+            [&] { return countReceived(rig.deviceEvents, MessageType::RoReadyToAir) == 1; }));
+        rig.deviceEndpoint->stop();
+    }
+}
+#endif  // defined(__linux__)
+
+#endif  // !defined(_WIN32)

@@ -3,8 +3,10 @@
 
 #include "tcp28_socket.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
+#include <string_view>
 
 #if defined(_WIN32)
 #include <winsock2.h>
@@ -278,10 +280,54 @@ Result<SocketHandle> listenOn(const std::string& address, int port, int& boundPo
     return socket;
 }
 
-SocketHandle acceptOne(SocketHandle listener) {
-    const SocketHandle accepted = ::accept(listener, nullptr, nullptr);
+namespace {
+
+std::string numericAddress(const sockaddr* address, socklen_t length) {
+    char host[NI_MAXHOST] = {};
+    if (::getnameinfo(address, length, host, sizeof(host), nullptr, 0, NI_NUMERICHOST) != 0) {
+        return {};
+    }
+    std::string text{host};
+    // "::ffff:192.0.2.1" and "192.0.2.1" are the same peer.
+    constexpr std::string_view kMapped = "::ffff:";
+    if (text.size() > kMapped.size() && text.compare(0, kMapped.size(), kMapped) == 0 &&
+        text.find('.') != std::string::npos) {
+        text.erase(0, kMapped.size());
+    }
+    return text;
+}
+
+}  // namespace
+
+std::vector<std::string> resolveNumericAddresses(const std::string& host) {
+    std::vector<std::string> out;
+    addrinfo hints = {};
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    addrinfo* results = nullptr;
+    if (::getaddrinfo(host.c_str(), nullptr, &hints, &results) != 0 || results == nullptr) {
+        return out;
+    }
+    for (const addrinfo* it = results; it != nullptr; it = it->ai_next) {
+        std::string text = numericAddress(it->ai_addr, static_cast<socklen_t>(it->ai_addrlen));
+        if (!text.empty() && std::find(out.begin(), out.end(), text) == out.end()) {
+            out.push_back(std::move(text));
+        }
+    }
+    ::freeaddrinfo(results);
+    return out;
+}
+
+SocketHandle acceptOne(SocketHandle listener, std::string* remoteAddress) {
+    sockaddr_storage remote = {};
+    socklen_t remoteLength = sizeof(remote);
+    const SocketHandle accepted =
+        ::accept(listener, reinterpret_cast<sockaddr*>(&remote), &remoteLength);
     if (accepted == kInvalidSocket) {
         return kInvalidSocket;
+    }
+    if (remoteAddress != nullptr) {
+        *remoteAddress = numericAddress(reinterpret_cast<const sockaddr*>(&remote), remoteLength);
     }
     setNonBlocking(accepted);
     setNoDelay(accepted);
