@@ -22,6 +22,26 @@ bool typeIsAmong(codec::MessageType type, std::span<const codec::MessageType> se
     return std::find(set.begin(), set.end(), type) != set.end();
 }
 
+/// Inbound duplicate suppression (spec §4.1.6) applies to exactly the
+/// peer-initiated requests whose answer is a bare acknowledgement: those are
+/// the state-changing commands a blind retry must not apply twice. Two
+/// families stay out of the window:
+///  - responses (mosAck/roAck, list replies): they echo *our* messageIDs,
+///    which share no number space with the peer's requests — recording one
+///    would later suppress an unrelated peer request carrying that number;
+///  - information requests (roReq, mosReqObj, reqMachInfo, heartbeat, …):
+///    the spec calls dedupe "not relevant" for them, and their rich reply
+///    cannot be regenerated here, so a retry is simply answered again.
+bool participatesInDedupe(const codec::MessageInfo& info) {
+    if (info.responses.empty()) {
+        return false;
+    }
+    const codec::MessageType primary = info.responses.front();
+    return primary == codec::MessageType::MosAck || primary == codec::MessageType::RoAck;
+}
+
+constexpr std::size_t kLateHeartbeatReplyCap = 64;
+
 }  // namespace
 
 PeerSession::PeerSession(SessionConfig config, Dependencies deps)
@@ -247,6 +267,22 @@ bool PeerSession::transmit(Channel channel, const PendingSend& send) {
     return true;
 }
 
+void PeerSession::expectLateHeartbeatReplies(ChannelState& ch, const PendingSend& send, int count) {
+    // Every transmission of a heartbeat can draw its own reply. A reply that
+    // is not the one completing the exchange looks exactly like a
+    // peer-initiated heartbeat; remember how many to swallow so they are
+    // neither answered (the spec's "endless looping condition") nor
+    // mistaken for peer traffic.
+    if (send.type != codec::MessageType::Heartbeat || send.messageId.empty() || count <= 0) {
+        return;
+    }
+    if (ch.lateHeartbeatReplies.size() >= kLateHeartbeatReplyCap &&
+        !ch.lateHeartbeatReplies.contains(send.messageId)) {
+        ch.lateHeartbeatReplies.erase(ch.lateHeartbeatReplies.begin());
+    }
+    ch.lateHeartbeatReplies[send.messageId] += count;
+}
+
 void PeerSession::trySend(Channel channel) {
     ChannelState& ch = state(channel);
     while (ch.connected && !ch.faulted && !ch.awaitingAck && !ch.queue.empty()) {
@@ -255,6 +291,7 @@ void PeerSession::trySend(Channel channel) {
             return;  // poll() keeps retrying while the queue is non-empty
         }
         front.sentOnce = true;
+        ++front.transmissions;
         if (front.awaitReply) {
             // In-flight-of-one (plan §3.3): hold the channel until a reply
             // from this message's response set arrives or retries lapse.
@@ -300,6 +337,7 @@ void PeerSession::completeInFlight(Channel channel, codec::Message reply) {
     PendingSend front = std::move(ch.queue.front());
     ch.queue.pop_front();
     ch.awaitingAck = false;
+    expectLateHeartbeatReplies(ch, front, front.transmissions - 1);
     if (ch.storeOpen && front.seq != 0) {
         (void)deps_.store->markAcked(ch.stream, front.seq);
     }
@@ -357,36 +395,46 @@ void PeerSession::handleInbound(Channel channel, codec::Message message) {
         return;
     }
 
-    // Peer-initiated traffic: duplicate suppression via the store window
-    // (spec §3.3 "intelligent retry" made idempotent).
     std::string messageId;
     if (const std::optional<std::string_view> id = message.messageID()) {
         messageId = *id;
     }
-    if (!messageId.empty()) {
+
+    // A heartbeat reply to an earlier transmission of one of our own
+    // heartbeats (a retry drew two replies, or the reply outlived a fault):
+    // swallow it rather than answer it.
+    if (message.type() == codec::MessageType::Heartbeat) {
+        if (const auto late = ch.lateHeartbeatReplies.find(messageId);
+            late != ch.lateHeartbeatReplies.end()) {
+            if (--late->second <= 0) {
+                ch.lateHeartbeatReplies.erase(late);
+            }
+            logMessage(LogLevel::Debug, "late heartbeat reply for messageID " + messageId);
+            return;
+        }
+    }
+
+    // Peer-initiated commands: duplicate suppression via the store window
+    // (spec §3.3 "intelligent retry" made idempotent).
+    if (!messageId.empty() && participatesInDedupe(info)) {
         Result<bool> seen = deps_.store->seenInbound(config_.peerKey, messageId);
         if (seen.ok() && seen.value()) {
-            // Re-ack blind retries when a bare ACK suffices; richer replies
-            // (mosObj to mosReqObj) cannot be regenerated here.
-            const std::span<const codec::MessageType> responses = info.responses;
-            if (!responses.empty()) {
-                const codec::MessageType ackType = responses.front();
-                if (ackType == codec::MessageType::MosAck || ackType == codec::MessageType::RoAck) {
-                    codec::Message ack = codec::makeMessage(ackType);
-                    ack.setMessageID(messageId);
-                    if (ackType == codec::MessageType::RoAck) {
-                        if (const codec::XmlNode* body = message.body()) {
-                            if (const codec::XmlNode* roId = body->firstChildElement("roID")) {
-                                if (codec::XmlNode* ackBody = ack.body()) {
-                                    ackBody->appendElement("roID").setText(roId->text());
-                                    ackBody->appendElement("roStatus").setText("OK");
-                                }
-                            }
+            // Re-ack the blind retry; participatesInDedupe() guarantees a
+            // bare ACK is the whole answer.
+            const codec::MessageType ackType = info.responses.front();
+            codec::Message ack = codec::makeMessage(ackType);
+            ack.setMessageID(messageId);
+            if (ackType == codec::MessageType::RoAck) {
+                if (const codec::XmlNode* body = message.body()) {
+                    if (const codec::XmlNode* roId = body->firstChildElement("roID")) {
+                        if (codec::XmlNode* ackBody = ack.body()) {
+                            ackBody->appendElement("roID").setText(roId->text());
+                            ackBody->appendElement("roStatus").setText("OK");
                         }
                     }
-                    (void)enqueueInternal(channel, std::move(ack), /*isReply=*/true);
                 }
             }
+            (void)enqueueInternal(channel, std::move(ack), /*isReply=*/true);
             SessionEvent event;
             event.type = SessionEventType::DuplicateSuppressed;
             event.channel = channel;
@@ -508,6 +556,7 @@ void PeerSession::onChannelConnected(Channel channel) {
         // Mid-flight reconnect: retransmit immediately (same messageID; the
         // peer's dedupe window absorbs it if the first copy landed).
         if (transmit(channel, ch.queue.front())) {
+            ++ch.queue.front().transmissions;
             ch.retryDeadline =
                 deps_.clock->now() + config_.retryTimeoutMillis + retryJitterMillis();
         }
@@ -563,7 +612,9 @@ void PeerSession::poll() {
             if (ch.retriesLeft > 0) {
                 --ch.retriesLeft;
                 logMessage(LogLevel::Debug, "retrying messageID " + ch.queue.front().messageId);
-                (void)transmit(channel, ch.queue.front());
+                if (transmit(channel, ch.queue.front())) {
+                    ++ch.queue.front().transmissions;
+                }
                 ch.retryDeadline = now + config_.retryTimeoutMillis + retryJitterMillis();
             } else {
                 // Link-fault escalation (plan §4.4): the message stays in the
@@ -571,6 +622,11 @@ void PeerSession::poll() {
                 PendingSend& front = ch.queue.front();
                 ch.faulted = true;
                 ch.awaitingAck = false;
+                // Replies to the transmissions made so far may still arrive
+                // while nothing is in flight; the resend after reconnect
+                // starts a fresh count.
+                expectLateHeartbeatReplies(ch, front, front.transmissions);
+                front.transmissions = 0;
                 SessionEvent failed;
                 failed.type = SessionEventType::DeliveryFailed;
                 failed.channel = channel;

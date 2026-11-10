@@ -71,7 +71,8 @@ struct ElementStatusReport {
                                                       std::string_view roStatus,
                                                       std::span<const ElementStatus> statuses = {});
 
-/// True when a roAck signals failure (roStatus is or starts with "NACK").
+/// True when a roAck signals failure. Spec §6 defines roStatus as "OK" or
+/// an error description, so every status other than OK is a refusal.
 [[nodiscard]] IMOS_CORE_API bool roAckIsNack(const codec::Message& roAck);
 
 /// The roAck's <roStatus> text ("" when absent).

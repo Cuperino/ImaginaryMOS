@@ -431,21 +431,48 @@ Result<void> RunningOrderModel::applyMetadataReplace(const codec::Message& messa
     if (it == orders_.end()) {
         return makeError(ErrorCode::NotFound, "unknown roID '" + roID + "'");
     }
-    // Header fields are replaced wholesale from the message (absent optional
-    // fields drop); the story list — and only the story list — is preserved.
-    codec::XmlNode rebuilt = it->second.node;
-    rebuilt.children.clear();
-    for (const codec::XmlNode& child : body->children) {
-        if (!child.isElement("story")) {
-            rebuilt.children.push_back(child);
+    // Spec §3.4.4 merge: a tag the message carries replaces the RO's value
+    // in place, a tag the RO lacks is added, a tag the message omits is left
+    // alone, and a mosExternalMetadata block replaces only a block with the
+    // same mosSchema (else it is added). The story list is never touched.
+    codec::XmlNode& ro = it->second.node;
+    // New header content lands after the last existing header element, so
+    // it always precedes the stories.
+    const auto insertHeader = [&ro](const codec::XmlNode& field) {
+        std::size_t at = 0;
+        for (std::size_t i = 0; i < ro.children.size(); ++i) {
+            if (ro.children[i].isElement("story")) {
+                break;
+            }
+            at = i + 1;
+        }
+        ro.children.insert(ro.children.begin() + static_cast<std::ptrdiff_t>(at), field);
+        ro.emptyTag = false;
+    };
+    for (const codec::XmlNode& field : body->children) {
+        if (field.kind != codec::XmlNodeKind::Element || field.name == "roID" ||
+            field.name == "story") {
+            continue;
+        }
+        codec::XmlNode* existing = nullptr;
+        if (field.name == "mosExternalMetadata") {
+            const std::string schema = field.childText("mosSchema");
+            for (codec::XmlNode& child : ro.children) {
+                if (child.isElement("mosExternalMetadata") &&
+                    child.childText("mosSchema") == schema) {
+                    existing = &child;
+                    break;
+                }
+            }
+        } else {
+            existing = ro.firstChildElement(field.name);
+        }
+        if (existing != nullptr) {
+            *existing = field;
+        } else {
+            insertHeader(field);
         }
     }
-    for (const codec::XmlNode& child : it->second.node.children) {
-        if (child.isElement("story")) {
-            rebuilt.children.push_back(child);
-        }
-    }
-    it->second.node = std::move(rebuilt);
     return {};
 }
 

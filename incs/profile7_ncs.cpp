@@ -195,11 +195,20 @@ bool Profile7NcsResponder::handle(const imos::SessionEvent& event) {
         }
     }
 
-    // Lease identity: a stable holder (the request's messageID) and a story key
-    // that stands in a sentinel for NEW, whose storyID the NCS assigns later.
+    // Lease identity. The holder is the requesting MOS — stable across its
+    // requests, so the follow-up action the spec requires inside the lease
+    // (§3.9.1 note 5) renews it instead of colliding with it. The lease
+    // covers the stories the request names: the one being updated/deleted,
+    // or every story being moved. A NEW story has no ID until the NCS
+    // assigns one, so its lease is taken once the story exists.
     const bool leaseRequested = leaseSeconds > 0 && leases_ != nullptr;
-    const std::string holder = event.messageId.empty() ? "unknown" : event.messageId;
-    const std::string leaseStoryKey = req.storyID.empty() ? "_new_" : req.storyID;
+    const std::string holder{message.mosID().value_or(std::string_view{})};
+    std::vector<std::string> leaseStories;
+    if (action == imos::profiles::StoryAction::Move) {
+        leaseStories = req.storyIDs;
+    } else if (!req.storyID.empty()) {
+        leaseStories.push_back(req.storyID);
+    }
 
     // Records one resolved action in the audit trail (accepted iff no reason).
     const auto recordAudit = [&](std::string_view storyID, std::string_view reason) {
@@ -215,9 +224,15 @@ bool Profile7NcsResponder::handle(const imos::SessionEvent& event) {
 
     // Try to acquire lease if requested
     if (leaseRequested) {
-        if (imos::Result<void> leaseResult =
-                leases_->acquire(req.roID, leaseStoryKey, holder, leaseSeconds, clock_->now());
-            !leaseResult.ok()) {
+        for (std::size_t i = 0; i < leaseStories.size(); ++i) {
+            imos::Result<void> leaseResult =
+                leases_->acquire(req.roID, leaseStories[i], holder, leaseSeconds, clock_->now());
+            if (leaseResult.ok()) {
+                continue;
+            }
+            // Another holder owns one of the stories: refuse the request
+            // as a whole. Leases this holder already has on the others
+            // stay — they are its own, and they simply run out.
             sendNack(req.roID, leaseResult.error().message);
             recordAudit(req.storyID, leaseResult.error().message);
             return true;
@@ -269,9 +284,11 @@ bool Profile7NcsResponder::handle(const imos::SessionEvent& event) {
 
     recordAudit(resolvedStoryID, nackReason);
 
-    // Release the lease if the action failed, so a retry can re-acquire.
-    if (!accepted && leaseRequested) {
-        leases_->release(req.roID, leaseStoryKey, holder);
+    // A refused action leaves the holder's lease in place: the holder is the
+    // same on its retry, so it re-acquires freely, and releasing here would
+    // drop a lease an earlier accepted request legitimately holds.
+    if (accepted && isNew && leaseRequested) {
+        (void)leases_->acquire(req.roID, assignedStoryID, holder, leaseSeconds, clock_->now());
     }
 
     return true;

@@ -3,9 +3,9 @@
 //
 // Spec-review regressions. Each test pins one defect found by reviewing the
 // implementation against the MOS 4.0 specification text, reproduced with a
-// real imos::Device against a real incs::Ncs over the loopback pair. They
-// are EXPECTED TO FAIL until the corresponding fix lands; every test names
-// the spec clause it asserts and the code it currently trips over.
+// real imos::Device against a real incs::Ncs over the loopback pair; every
+// test names the spec clause it asserts. Item 6 (the time format) is not
+// fixed yet and is EXPECTED TO FAIL until it is.
 //
 //   1. A late/duplicate ack must not enter the inbound dedupe window
 //      (spec §4.1.6: only peer *requests* with identical messageIDs are
@@ -311,4 +311,32 @@ TEST(SpecRegression, LeaseHolderCanSendItsFollowUpAction) {
     const std::optional<imos::profiles::StoryActionResult> second = leasedMove("s4");
     ASSERT_TRUE(second.has_value());
     EXPECT_TRUE(second->ok) << "the lease holder was refused: " << second->roStatus;
+}
+
+// 1b. The heartbeat is the one message that is its own reply, so a second
+//     reply to a retried heartbeat is indistinguishable from a peer-initiated
+//     one. It must be swallowed — not answered (the spec's "endless looping
+//     condition", §2.1) and not recorded as peer traffic — while a genuinely
+//     retried peer heartbeat is still answered every time.
+TEST(SpecRegression, RetriedHeartbeatNeitherLoopsNorGoesUnanswered) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+
+    ASSERT_TRUE(fx.device->session()
+                    .enqueue(Channel::Ro, imos::codec::makeMessage(MessageType::Heartbeat))
+                    .ok());
+    fx.clock.advanceSeconds(11);
+    fx.device->poll();
+    ASSERT_EQ(roQueue(fx.deviceTransport).size(), 2U);  // original + retry
+
+    // Both copies reach the NCS; each is answered (a retry means the first
+    // reply may have been lost).
+    ASSERT_TRUE(fx.pump());
+    ASSERT_EQ(roQueue(fx.ncsTransport).size(), 2U);
+    // Both replies reach the device: one completes the exchange, the other
+    // is swallowed — nothing goes back.
+    ASSERT_TRUE(fx.pump());
+    EXPECT_TRUE(roQueue(fx.deviceTransport).empty()) << "a late heartbeat reply was answered";
+    EXPECT_TRUE(roQueue(fx.ncsTransport).empty());
+    EXPECT_TRUE(fx.device->session().channelIdle(Channel::Ro));
 }

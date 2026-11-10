@@ -479,12 +479,19 @@ TEST(Profile7, MoveReordersStories) {
 }
 
 // 8. Lease handling (spec: the MOS holds the lock for leaseLock seconds; the
-//    NCS reclaims on expiry): a granted lease NACKs a conflicting request from
-//    a different holder, and is reclaimable once it expires.
+//    NCS reclaims on expiry): a story leased to another MOS NACKs this
+//    device's request until that lease expires, after which this device
+//    holds it and can keep acting on the story (same-holder renewal).
 TEST(Profile7, LeaseBlocksConflictingRequestUntilExpiry) {
     TwoRoleFixture fx;
     fx.connectAll();
     convergePlainRo(fx, "RO1", 1);
+
+    // The lease policy is shared across the NCS's device relationships;
+    // another MOS already holds story s1.
+    SingleHolderLeasePolicy policy;
+    fx.ncs->setLeasePolicy(&policy);
+    ASSERT_TRUE(policy.acquire("RO1", "s1", "other.device.mos", 5, fx.clock.now()).ok());
 
     const auto update = [&](const std::string& take) {
         StoryActionRequest req{};
@@ -498,15 +505,15 @@ TEST(Profile7, LeaseBlocksConflictingRequestUntilExpiry) {
         return nextResult(fx);
     };
 
-    EXPECT_TRUE(update("one").ok);  // grants the lease (held past success)
-
     const imos::profiles::StoryActionResult conflict =
-        update("two");  // different holder, unexpired
+        update("one");  // different holder, unexpired
     EXPECT_FALSE(conflict.ok);
     EXPECT_NE(conflict.roStatus.find("locked"), std::string::npos) << conflict.roStatus;
 
-    fx.clock.advanceSeconds(6);       // lease expires
-    EXPECT_TRUE(update("three").ok);  // reclaimable
+    fx.clock.advanceSeconds(6);      // the other MOS's lease expires
+    EXPECT_TRUE(update("two").ok);   // reclaimable: this device now holds it
+    EXPECT_TRUE(update("three").ok)  // its follow-up inside the lease renews it
+        << "the lease holder was locked out of its own lease";
 }
 
 // 9. The default lease policy in isolation: single holder, TTL from
