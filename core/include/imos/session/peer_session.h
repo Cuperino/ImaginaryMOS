@@ -24,6 +24,7 @@
 #include <array>
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -142,6 +143,7 @@ private:
         bool awaitReply = false;
         bool isReply = false;  ///< completes the peer's exchange; never blocked
         bool sentOnce = false;
+        int transmissions = 0;  ///< wire sends so far (original + retries)
     };
     struct ChannelState {
         bool connected = false;
@@ -154,6 +156,9 @@ private:
         MonotonicTime retryDeadline{};
         MonotonicTime lastSendActivity{};
         MonotonicTime nextHeartbeat{};
+        /// Own heartbeat messageID → replies still expected for earlier
+        /// transmissions (retries / pre-fault sends); see handleInbound.
+        std::map<std::string, int, std::less<>> lateHeartbeatReplies;
     };
 
     ChannelState& state(Channel channel);
@@ -165,6 +170,7 @@ private:
     Result<Seq> enqueueInternal(Channel channel, codec::Message message, bool isReply);
     void trySend(Channel channel);
     bool transmit(Channel channel, const PendingSend& send);
+    static void expectLateHeartbeatReplies(ChannelState& ch, const PendingSend& send, int count);
     void completeInFlight(Channel channel, codec::Message reply);
     void handleInbound(Channel channel, codec::Message message);
     /// Split a frame carrying several <mos> documents (tolerated with a

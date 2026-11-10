@@ -68,7 +68,16 @@ std::string roAckStatusText(const codec::Message& roAck) {
 }
 
 bool roAckIsNack(const codec::Message& roAck) {
-    return roAckStatusText(roAck).starts_with("NACK");
+    // Spec §6: roStatus is "OK" or an error description — anything that is
+    // not OK is a refusal, whatever words the peer chose for it.
+    const std::string text = roAckStatusText(roAck);
+    constexpr std::string_view kSpace = " \t\r\n";
+    const std::size_t first = text.find_first_not_of(kSpace);
+    if (first == std::string::npos) {
+        return true;  // an empty status is not OK
+    }
+    const std::size_t last = text.find_last_not_of(kSpace);
+    return std::string_view{text}.substr(first, last - first + 1) != "OK";
 }
 
 std::vector<ElementStatus> roAckStatuses(const codec::Message& roAck) {
@@ -298,9 +307,10 @@ void Profile2Responder::handleConstruction(const SessionEvent& event) {
     const Result<void> outcome = model_.apply(message);
     std::string roStatus;
     if (outcome.ok()) {
-        // Spec §3.4.1 example: unresolved objects ride an otherwise
-        // successful ack as informational per-item statuses.
-        roStatus = firstUnknown.empty() ? std::string{"OK"} : "Unknown object " + firstUnknown;
+        // The message was applied, so roStatus is OK (spec §6: anything else
+        // reads as an error description). Unresolved objects ride the ack
+        // as informational per-item UNKNOWN statuses.
+        roStatus = "OK";
     } else {
         roStatus = "NACK: " + outcome.error().message;
         statuses.clear();  // the payload tuples describe content we rejected
@@ -439,7 +449,14 @@ bool Profile2NcsResponder::handle(const SessionEvent& event) {
             }
             if (list.has_value()) {
                 codec::echoMessageID(event.message, *list);
-                (void)session_->enqueueReply(event.channel, std::move(*list));
+                // In queue order, not as an overtaking reply: the snapshot
+                // already contains every construction message queued ahead
+                // of it, so it must reach the device *after* them — sent
+                // first, the rebuild would have those diffs applied a second
+                // time on top of it. roList awaits no ack of its own, and
+                // the device acks the queued messages past its pending
+                // roReq, so the queue still drains.
+                (void)session_->enqueue(event.channel, std::move(*list));
             } else {
                 codec::Message ack = buildRoAck(roID, "NACK: unknown roID '" + roID + "'");
                 codec::echoMessageID(event.message, ack);

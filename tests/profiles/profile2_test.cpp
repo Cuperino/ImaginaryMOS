@@ -659,8 +659,8 @@ TEST(Profile2, NackElementStatusesReachTheCommitResult) {
     EXPECT_EQ(commits[0].statuses[1].objID, "MISSING");
     EXPECT_EQ(commits[0].statuses[1].status, "UNKNOWN");
 
-    // Accept policy (the spec example's behavior): the RO applies and the
-    // unresolved object rides the ack as an informational status.
+    // Accept policy: the RO applies (roStatus OK) and the unresolved object
+    // rides the ack as an informational per-item status.
     fx.device->setUnknownObjectPolicy(
         imos::profiles::Profile2Responder::UnknownObjectPolicy::Accept);
     ASSERT_TRUE(fx.ncs->author().commit("RO9").ok());  // NACK marked it unknown → roReplace
@@ -669,7 +669,7 @@ TEST(Profile2, NackElementStatusesReachTheCommitResult) {
     commits = drainCommits(*fx.ncs);
     ASSERT_EQ(commits.size(), 1U);
     EXPECT_TRUE(commits[0].ok);
-    EXPECT_TRUE(commits[0].roStatus.starts_with("Unknown object"));
+    EXPECT_EQ(commits[0].roStatus, "OK");  // applied → OK; the tuples carry the detail
     ASSERT_EQ(commits[0].statuses.size(), 2U);
     EXPECT_EQ(commits[0].statuses[1].status, "UNKNOWN");
 }

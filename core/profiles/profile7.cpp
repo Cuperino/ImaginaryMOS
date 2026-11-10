@@ -127,11 +127,17 @@ bool Profile7Requester::handle(const SessionEvent& event) {
     StoryActionResult result;
     result.seq = event.seq;
     result.roStatus = roAckStatusText(event.message);
-    result.ok = !roAckIsNack(event.message);
-
-    // For a successful NEW, the roStatus carries the NCS-assigned storyID
-    if (result.ok && operation == StoryAction::New) {
-        result.assignedStoryID = result.roStatus;
+    if (operation == StoryAction::New) {
+        // Spec §3.9.1: a successful NEW answers with the storyID *in*
+        // roStatus, so "not OK" cannot mean failure here; the only failure
+        // marker the exchange leaves is the NACK keyword (or an empty
+        // status, which names no story).
+        result.ok = !result.roStatus.empty() && !result.roStatus.starts_with("NACK");
+        if (result.ok) {
+            result.assignedStoryID = result.roStatus;
+        }
+    } else {
+        result.ok = !roAckIsNack(event.message);
     }
 
     results_.push_back(std::move(result));

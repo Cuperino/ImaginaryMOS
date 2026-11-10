@@ -61,8 +61,10 @@ public:
     /// Decisions of record: roCreate of an existing roID is WrongState (use
     /// roReplace); roReplace and roList upsert (they carry complete state, so
     /// nothing is missing that a resync could recover); roMetadataReplace
-    /// replaces the RO header fields wholesale (absent optional fields are
-    /// dropped) and leaves the story list untouched.
+    /// merges into the RO header per spec §3.4.4 (present tags replace in
+    /// place, new tags are added, absent tags are left alone, a
+    /// mosExternalMetadata block replaces only one with the same mosSchema)
+    /// and leaves the story list untouched.
     Result<void> apply(const codec::Message& message);
 
     /// Drop one RO without ceremony — the resync NACK branch (the NCS no
