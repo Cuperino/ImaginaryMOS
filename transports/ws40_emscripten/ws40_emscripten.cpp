@@ -56,7 +56,7 @@ struct Ws40EmscriptenClient::Impl {
     // concurrently with pump(). No locking is needed.
     std::deque<QueuedEvent> queue;
     bool started = false;
-    pthread_t owningThread{};      ///< the thread that called start()
+    pthread_t owningThread{};  ///< the thread that called start()
     bool crossThreadReported = false;
 
     ChannelSlot& slot(Channel channel) { return slots[static_cast<std::size_t>(channel)]; }

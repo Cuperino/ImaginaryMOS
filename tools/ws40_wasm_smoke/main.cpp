@@ -78,16 +78,14 @@ void configure(App& app, const char* port) {
     config.passive = true;
     config.reconnect.initialDelayMillis = 50;
     config.reconnect.maxDelayMillis = 500;
-    app.client =
-        std::make_unique<imos::transports::ws40::Ws40EmscriptenClient>(config, &app.clock);
+    app.client = std::make_unique<imos::transports::ws40::Ws40EmscriptenClient>(config, &app.clock);
 
     imos::SessionConfig sessionConfig;
     sessionConfig.mosID = config.mosID;
     sessionConfig.ncsID = config.ncsID;
     sessionConfig.keepAliveIntervalMillis = 0;
     app.session = std::make_unique<imos::PeerSession>(
-        sessionConfig,
-        imos::PeerSession::Dependencies{&app.clock, app.client.get(), &app.store});
+        sessionConfig, imos::PeerSession::Dependencies{&app.clock, app.client.get(), &app.store});
 
     imos::profiles::MachineInfo info;
     info.manufacturer = "Imaginary";
@@ -200,8 +198,7 @@ int main(int argc, char** argv) {
         emscripten_set_main_loop(&threadedTick, 0, /*simulate_infinite_loop=*/1);
         return 0;
 #else
-        std::fprintf(stderr,
-                     "[smoke] thread mode needs a -pthread build (wasm-mt preset)\n");
+        std::fprintf(stderr, "[smoke] thread mode needs a -pthread build (wasm-mt preset)\n");
         return 2;
 #endif
     }

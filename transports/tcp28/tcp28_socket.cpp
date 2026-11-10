@@ -335,6 +335,10 @@ SocketHandle acceptOne(SocketHandle listener, std::string* remoteAddress) {
 }
 
 WakePipe::WakePipe() {
+    // The pipe is a member of the endpoint's state, so it is built before
+    // the endpoint's constructor body runs: bring the network up here, or
+    // the first endpoint in a process gets no wake pipe on Windows.
+    ensureNetSystem();
 #if defined(_WIN32)
     // No pipes in WSAPoll's world: emulate with a loopback TCP pair.
     int port = 0;

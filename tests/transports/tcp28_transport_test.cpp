@@ -107,11 +107,19 @@ MachineInfo machineInfo(DeviceType type) {
 
 /// The 2.8 ports are fixed by deployment configuration, so tests must pick
 /// free ones up front (both endpoints need the pair at construction). Bind
-/// an ephemeral listener, note the port, release it — same probe race the
-/// ws40 server documents; acceptable over loopback.
+/// an ephemeral listener, note the port, release it. A released port can be
+/// taken again before its endpoint binds it — notably as the source port of
+/// the other endpoint's first dial — so the rigs retry start() with a fresh
+/// plan (kStartAttempts).
+constexpr int kStartAttempts = 8;
+
 int pickFreePort(imos::IClock& clock) {
     EndpointConfig config;
-    config.role = Role::Ncs;  // listens on mom
+    config.role = Role::Ncs;
+    // One listener (mom) and nothing else: the default four-socket scheme
+    // would also bind the fixed default ro port, which the probe must not
+    // depend on being free.
+    config.topology = Topology::SingleDirection;
     config.bindAddress = "127.0.0.1";
     config.ports.mom = 0;
     Tcp28Endpoint probe{config, &clock};
@@ -178,13 +186,31 @@ struct Rig {
     std::vector<std::pair<Channel, std::string>> ncsDiagnostics;
 
     void start(bool withResponders = true, bool withAux = false) {
+        for (int attempt = 0; attempt < kStartAttempts; ++attempt) {
+            if (tryStart(withResponders, withAux)) {
+                return;
+            }
+            deviceResponder.reset();
+            ncsResponder.reset();
+            deviceSession.reset();
+            ncsSession.reset();
+            deviceEndpoint.reset();
+            ncsEndpoint.reset();
+        }
+        FAIL() << "could not bind a loopback port plan";
+    }
+
+    bool tryStart(bool withResponders, bool withAux) {
         ports.mom = pickFreePort(clock);
         ports.ro = pickFreePort(clock);
-        ASSERT_NE(ports.mom, 0);
-        ASSERT_NE(ports.ro, 0);
+        if (ports.mom == 0 || ports.ro == 0) {
+            return false;
+        }
         if (withAux) {
             ports.aux = pickFreePort(clock);
-            ASSERT_NE(ports.aux, 0);
+            if (ports.aux == 0) {
+                return false;
+            }
         }
 
         EndpointConfig ncsConfig;
@@ -232,10 +258,10 @@ struct Rig {
                                                                   deviceSession.get(), &clock);
         }
 
-        if (startNcs) {
-            ASSERT_TRUE(ncsEndpoint->start().ok());
+        if (startNcs && !ncsEndpoint->start().ok()) {
+            return false;
         }
-        ASSERT_TRUE(deviceEndpoint->start().ok());
+        return deviceEndpoint->start().ok();
     }
 
     void pumpOnce() {
@@ -523,14 +549,30 @@ struct FacadeRig {
 
     void start(imos::encoding::WireEncoding encoding = imos::encoding::WireEncoding::Ucs2Be,
                bool withAux = false) {
+        for (int attempt = 0; attempt < kStartAttempts; ++attempt) {
+            if (tryStart(encoding, withAux)) {
+                return;
+            }
+            device.reset();
+            ncs.reset();
+            deviceEndpoint.reset();
+            ncsEndpoint.reset();
+        }
+        FAIL() << "could not bind a loopback port plan";
+    }
+
+    bool tryStart(imos::encoding::WireEncoding encoding, bool withAux) {
         ChannelPorts ports;
         ports.mom = pickFreePort(clock);
         ports.ro = pickFreePort(clock);
-        ASSERT_NE(ports.mom, 0);
-        ASSERT_NE(ports.ro, 0);
+        if (ports.mom == 0 || ports.ro == 0) {
+            return false;
+        }
         if (withAux) {
             ports.aux = pickFreePort(clock);
-            ASSERT_NE(ports.aux, 0);
+            if (ports.aux == 0) {
+                return false;
+            }
         }
 
         EndpointConfig ncsConfig;
@@ -562,8 +604,7 @@ struct FacadeRig {
             imos::DeviceConfig{sessionConfig(encoding), machineInfo(DeviceType::Mos)},
             PeerSession::Dependencies{&clock, deviceEndpoint.get(), &deviceStore});
 
-        ASSERT_TRUE(ncsEndpoint->start().ok());
-        ASSERT_TRUE(deviceEndpoint->start().ok());
+        return ncsEndpoint->start().ok() && deviceEndpoint->start().ok();
     }
 
     void pumpOnce() {
