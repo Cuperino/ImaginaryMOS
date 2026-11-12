@@ -1,19 +1,20 @@
-# NRCS Plan — a newsroom computer system on ImaginaryMOS, Qt 6.12.0 and KDDockWidgets
+# QNCS Plan — a newsroom computer system on ImaginaryMOS, Qt 6.12.0 and KDDockWidgets
 
 **Status:** proposal (2026-11-11). Nothing here is built yet.
-**Working name:** `nrcs` (placeholder — pick a product name before N0 ends; it
-ends up in bundle IDs, the default `ncsID`, and config paths).
+**Product name:** **QNCS** (Q News Control System). Binaries and libraries
+use the `qncs` prefix (`qncs-app`, `qncsd`, `qncs-core`, …). Default `ncsID`:
+`qncs`, configurable per site (a site using Profile 6 sets an FQID instead).
 **Fixed constraints (from the request):** built on ImaginaryMOS; Qt **6.12.0**;
 KDDockWidgets for the docking shell; runs on **Linux, macOS and Windows**;
 licensed **GPLv3**.
 **Relationship to the master plan:** this is a *consumer* of ImaginaryMOS, not
 a milestone of it. It is distinct from `incs-sim` (master plan §11), which is a
-headless scripted test peer; the NRCS is an end-user product. It lives in its
+headless scripted test peer; QNCS is an end-user product. It lives in its
 own repository (§3.2); this document sits here only because the plan depends
 on `incs` details.
 
 Decisions are numbered **(D*n*)**. D1, D2, D3, D5 and D6 were settled by the
-owner on 2026-11-12 and are recorded in §13 (D1–D6 decided; D7 open).
+owner on 2026-11-12 and are recorded in §13 (D1–D7 decided; D8, WebAssembly, open).
 
 ## 1. Summary
 
@@ -28,19 +29,19 @@ desktop client.
 
 The architecture is three layers in one codebase:
 
-1. **`nrcs-core`** — Qt Core–only domain library: stories, rundowns, timing,
+1. **`qncs-core`** — Qt Core–only domain library: stories, rundowns, timing,
    undo, persistence, permissions. No GUI, no MOS.
-2. **`nrcs-mos`** — the MOS gateway: one `incs::Ncs` + `RunningOrderAuthor` +
+2. **`qncs-mos`** — the MOS gateway: one `incs::Ncs` + `RunningOrderAuthor` +
    transport endpoint per configured device, pumped from a Qt event loop,
    translating between the domain model and MOS.
-3. **`nrcs-app`** — the Qt Widgets desktop client on KDDockWidgets.
+3. **`qncs-app`** — the Qt Widgets desktop client on KDDockWidgets.
 
-A headless **`nrcsd`** composes (1)+(2) as the newsroom server, storing
+A headless **`qncsd`** composes (1)+(2) as the newsroom server, storing
 everything in PostgreSQL. It serves many clients at once and can run as an
 active/standby pair with automatic failover (§6.1). Until the network layer
 lands (N6) the desktop app hosts the same service in-process against a local
 PostgreSQL; that mode is kept afterwards for development and tests only. A
-single-seat installation is simply `nrcsd` and PostgreSQL on the same machine
+single-seat installation is simply `qncsd` and PostgreSQL on the same machine
 as the app.
 
 ## 2. Scope
@@ -71,8 +72,8 @@ as the app.
 - Hosting MOS plug-ins (the `ncs*` ActiveX/HTML messages): ImaginaryMOS
   defers them (`plugin/`), and so do we. Revisit after 1.0 via Qt WebEngine.
 - Acting as a MOS *device*. The `imos` library is used in tests only.
-- Mobile and web clients. The server protocol (§6) is designed not to
-  preclude them.
+- Mobile clients. The server protocol (§6) is designed not to preclude
+  them. (A WebAssembly build is under discussion — §9.1.)
 - Vendor certification against commercial devices. Interop claims are limited
   to what we can test (§10.3).
 
@@ -82,7 +83,7 @@ as the app.
 
 | Component | Licence | Into a GPLv3 work |
 |---|---|---|
-| NRCS (this project) | GPL-3.0 | — |
+| QNCS (this project) | GPL-3.0 | — |
 | ImaginaryMOS | Apache-2.0 | Compatible (one-way; the reason GPLv2 would not work) |
 | KDDockWidgets | GPL-2.0-only OR GPL-3.0-only (or commercial) | Taken under GPL-3.0-only |
 | Qt 6.12.0 | LGPL-3.0 / GPL-3.0 per module (or commercial) | Compatible; GPL-only Qt modules become usable |
@@ -105,7 +106,7 @@ Consequences to plan for:
 - **(D2, decided)** Contributions require the owner's CLA
   (<https://github.com/Cuperino/Signatures/blob/main/CLA.md>). A CLA check
   runs on every pull request from N0; `CONTRIBUTING.md` links the text.
-- Protocol fixes found while building the NRCS go **upstream into
+- Protocol fixes found while building QNCS go **upstream into
   ImaginaryMOS under Apache-2.0**, never into a GPL fork of it.
 
 ### 3.2 Repository
@@ -114,16 +115,16 @@ An entirely new repository (decided), separate from ImaginaryMOS, so the
 Apache-2.0 library never acquires GPL files. Proposed layout:
 
 ```
-nrcs/
+qncs/
   CMakeLists.txt  CMakePresets.json  LICENSES/  docs/
   3rdparty/
     ImaginaryMOS/        # submodule, pinned commit
     KDDockWidgets/       # submodule, pinned 2.x tag
-  core/                  # nrcs-core   (Qt6::Core, Qt6::Sql)
-  mos/                   # nrcs-mos    (nrcs-core + imos::incs + imos::transports)
-  service/               # nrcs-service: command/event API, auth, sync protocol
-  server/                # nrcsd       (headless; Qt6::Network, Qt6::WebSockets)
-  app/                   # nrcs-app    (Qt Widgets + KDDockWidgets)
+  core/                  # qncs-core   (Qt6::Core, Qt6::Sql)
+  mos/                   # qncs-mos    (qncs-core + imos::incs + imos::transports)
+  service/               # qncs-service: command/event API, auth, sync protocol
+  server/                # qncsd       (headless; Qt6::Network, Qt6::WebSockets)
+  app/                   # qncs-app    (Qt Widgets + KDDockWidgets)
     models/              # QAbstractItemModels and presenters; no widget code
     docks/               # one widget class per dock
     editor/              # script editor (QTextDocument-based)
@@ -176,7 +177,7 @@ window.
 ### 4.4 ImaginaryMOS
 
 - Consumed as a pinned submodule via `add_subdirectory` for development
-  (static libs, one toolchain), with a `NRCS_USE_SYSTEM_IMAGINARYMOS` option
+  (static libs, one toolchain), with a `QNCS_USE_SYSTEM_IMAGINARYMOS` option
   that switches to `find_package(ImaginaryMOS CONFIG REQUIRED)` for distro
   packaging. Targets: `imos::incs`, `imos::transports`, and `imos::imos` for
   tests only.
@@ -194,7 +195,7 @@ automatic failover (§6.1). Its many-writer concurrency is not used — the
 service remains the single writer.
 
 - **Only the server links the database driver.** Qt's PostgreSQL driver
-  needs `libpq` at run time; `nrcsd` packages bundle or depend on it per
+  needs `libpq` at run time; `qncsd` packages bundle or depend on it per
   platform. Once clients are networked (N6) the desktop app carries no
   database code at all.
 - **Minimum PostgreSQL 16**; the exact floor is confirmed in N1 against what
@@ -207,12 +208,12 @@ service remains the single writer.
   from every released version.
 - **The MOS message store lives in the database too.** ImaginaryMOS's
   `IMessageStore` (unacked-message durability) is an injected interface;
-  `nrcs-mos` implements it on PostgreSQL instead of using the library's
+  `qncs-mos` implements it on PostgreSQL instead of using the library's
   file backend, so pending device messages replicate to the standby with
   everything else. The implementation must pass the same crash-recovery
   expectations as the library's file store.
 
-## 5. Domain model (`nrcs-core`)
+## 5. Domain model (`qncs-core`)
 
 | Entity | Notes | MOS mapping |
 |---|---|---|
@@ -265,7 +266,7 @@ event.
 
 ### 6.1 High availability
 
-Two `nrcsd` machines, one active and one standby, plus a small witness node
+Two `qncsd` machines, one active and one standby, plus a small witness node
 as tie-breaker.
 
 ```
@@ -273,7 +274,7 @@ as tie-breaker.
         └────────► service address ◄───────┘        (floating IP or DNS)
                          │
           ┌──────────────┴──────────────┐
-    nrcsd A (active)              nrcsd B (standby)
+    qncsd A (active)              qncsd B (standby)
     service + MOS gateway         gateway off, no clients
           │                             │
     PostgreSQL primary ─────────► PostgreSQL replica
@@ -286,7 +287,7 @@ as tie-breaker.
   (Patroni or pg_auto_failover — chosen in N7); we do not write our own.
   Replication is synchronous by default so no confirmed command is lost;
   asynchronous is a site option.
-- **Exactly one active `nrcsd`.** Each instance tries to hold a session
+- **Exactly one active `qncsd`.** Each instance tries to hold a session
   advisory lock on the current primary. The holder runs the service and the
   MOS gateway; an instance that loses the lock or its database connection
   stops its gateway and drops its clients immediately. This is what keeps
@@ -300,11 +301,13 @@ as tie-breaker.
   re-claim their story locks, and resend unsaved edits.
 - **Target:** service restored within 60 seconds with no operator action.
   Devices keep playing what they already hold during the gap.
-- **Supported HA platform (D7, recommendation): Linux only.** `nrcsd` runs
-  on all three operating systems; the replicated pair is tested and
-  documented on Linux, where the PostgreSQL failover tooling is at home.
+- **Platforms (D7, decided):** `qncsd` — including the failover code paths —
+  builds and passes its CI test suite on Linux, macOS and Windows. The
+  replicated pair as a deployed system (PostgreSQL replication, failover
+  tooling, address takeover, kill-the-server rig) is actively tested on
+  Linux only; on the other two it is expected to work but is not exercised.
 
-## 7. MOS gateway (`nrcs-mos`)
+## 7. MOS gateway (`qncs-mos`)
 
 ### 7.1 Hosting `incs`
 
@@ -335,7 +338,7 @@ PeerLink (QObject, lives on the gateway thread)
 
 ### 7.2 Mapping the model to profiles
 
-| Profile | NRCS behaviour |
+| Profile | QNCS behaviour |
 |---|---|
 | **0** | Connection state, heartbeat and `listMachInfo` per device in a Devices dock; reconnect is the library's. |
 | **1** | Media browser fed by the object directory; `requestAll` on first connect, incremental `mosObj` after. |
@@ -363,10 +366,10 @@ Two policies need a decision per device and therefore a settings UI:
   it) and the UI labels them as unauthenticated.
 - **Resync is normal, not an error.** When a device loses the RO, the library
   resyncs; the UI shows it as a transient state on the device, not a dialog.
-- If the NRCS needs something `incs` does not expose, **fix it upstream** in
-  `core/`/`incs` with tests there. No protocol logic in `nrcs-mos`.
+- If QNCS needs something `incs` does not expose, **fix it upstream** in
+  `core/`/`incs` with tests there. No protocol logic in `qncs-mos`.
 
-## 8. Desktop client (`nrcs-app`)
+## 8. Desktop client (`qncs-app`)
 
 ### 8.1 Docks
 
@@ -390,7 +393,7 @@ an upgrade that adds a dock does not discard them.
 - One widget class per dock under `app/docks/`; it owns layout and painting
   only. State and behaviour sit in a model or presenter that has no
   `QWidget` dependency.
-- No MOS types above `nrcs-mos`; the UI sees domain types and service
+- No MOS types above `qncs-mos`; the UI sees domain types and service
   commands only.
 - Every action is a `QAction` in one central table, reachable from the
   keyboard with a remappable shortcut — rundown operators do not use the
@@ -426,10 +429,10 @@ across split, merge and paste — that is the N0 spike.
 | | Linux | macOS | Windows |
 |---|---|---|---|
 | Toolchain | GCC/Clang, Ninja | Apple Clang, universal binary | MSVC 2022 |
-| Bundle | AppImage + Flatpak; `.deb` for `nrcsd` | signed, notarised `.dmg` (`macdeployqt`) | signed installer (`windeployqt` + CPack) |
+| Bundle | AppImage + Flatpak; `.deb` for `qncsd` | signed, notarised `.dmg` (`macdeployqt`) | signed installer (`windeployqt` + CPack) |
 | Server | systemd unit | launchd plist | Windows service |
 | Config/data | `QStandardPaths` everywhere; no hard-coded paths |
-| Database | PostgreSQL from the distribution, Homebrew or the official installer; `nrcsd` set-up creates the schema |
+| Database | PostgreSQL from the distribution, Homebrew or the official installer; `qncsd` set-up creates the schema |
 
 Cross-platform obligations beyond "it compiles":
 
@@ -437,8 +440,40 @@ Cross-platform obligations beyond "it compiles":
   first-run set-up; the legacy ports 10540–10542 are configurable.
 - HiDPI and mixed-DPI multi-monitor verified with floating docks on each OS.
 - Native menu bar and shortcuts on macOS (Cmd vs Ctrl) from one action table.
-- CI builds, tests and packages all three on every merge; release artifacts
-  come only from CI.
+- Every component — libraries, `qncs-app`, `qncsd` — is supported on all
+  three. CI builds, runs the full test suite (including the PostgreSQL-backed
+  tests) and packages on all three on every merge; release artifacts come
+  only from CI.
+
+### 9.1 WebAssembly (D8, open)
+
+Requirement as stated by the owner: **`qncsd` should also run on
+WebAssembly.** Qt's WebAssembly target runs inside a browser sandbox, which
+rules out three things the native server depends on:
+
+| Native `qncsd` needs | In a browser |
+|---|---|
+| Listen for client connections | Not possible — a page can only dial out |
+| Listen on MOS ports; 2.8 TCP; 3.8 SOAP server | Not possible; only outbound WebSocket, i.e. MOS 4.0 where the *device* accepts the connection (ImaginaryMOS's `ws40_emscripten` client) |
+| PostgreSQL via `libpq` | Not possible — no raw sockets; would need a different store or a WebSocket bridge to the database |
+
+So a WebAssembly build cannot be the newsroom server. What it can be is one
+of the following, and the plan needs the owner to pick:
+
+- **(a) Browser client.** `qncs-app` compiled to WebAssembly, connecting to a
+  native `qncsd` over the existing WebSocket protocol. Qt Widgets and
+  KDDockWidgets' Widgets frontend must both be verified on the wasm target
+  (floating windows cannot leave the browser tab).
+- **(b) Self-contained browser edition.** The service and MOS gateway
+  compiled into the page with the app: single user, MOS 4.0 outbound only,
+  and a second, browser-local storage backend behind the repository
+  interfaces — which reopens the "PostgreSQL only" decision for that build.
+- **(c) Both.**
+
+Whichever is chosen, the wasm build joins CI (build plus headless-browser
+tests) and gets a milestone; `core/`, `service/` and `mos/` are kept free of
+threads-required and filesystem-required code paths from N1 so the option
+stays cheap.
 
 ## 10. Quality
 
@@ -451,7 +486,7 @@ Cross-platform obligations beyond "it compiles":
   as the peer and drives the gateway over loopback on all three transports —
   ImaginaryMOS ships both roles, so no mock of the protocol is ever written.
   Assertions are on the device's resulting RO, not on message text.
-- **Multi-user:** N scripted clients against one `nrcsd`, randomised command
+- **Multi-user:** N scripted clients against one `qncsd`, randomised command
   interleavings, convergence checked; lock and reconnect cases.
 - **GUI:** Qt Test per dock against fake models (`QTest` key/mouse events,
   offscreen platform in CI); script-editor edit sequences checked against
@@ -484,7 +519,7 @@ Indicative durations assume two to three engineers; treat them as shapes.
 | **N3 — MOS gateway, Profiles 0–2** | Device configuration UI, `PeerLink`, 4.0 WebSocket (standard + passive, TLS, auth), RO mirroring through `RunningOrderAuthor`, status feedback, Devices and MOS monitor docks | Edits in the UI converge on an `imos::Device`'s RO under random churn and forced disconnects | 4 wk |
 | **N4 — Media, Profiles 1 and 3** | Media browser, search and paging, drag-to-story, placeholders, `mosItemReplace` ingest | Three-channel workflow green end to end from the UI | 3 wk |
 | **N5 — Prompter and control, Profiles 4, 5, 7** | Story send, cue/take, on-air highlighting, device-originated story edits through the lock table | Prompter round trip green; P7 edit appears in history with attribution | 3 wk |
-| **N6 — Multi-user** | `nrcsd`, sync protocol, accounts and roles, story locks, presence, reconnect; gateway moves server-side | Convergence suite green with 10 clients; N1–N5 suites still pass through the networked path | 6 wk |
+| **N6 — Multi-user** | `qncsd`, sync protocol, accounts and roles, story locks, presence, reconnect; gateway moves server-side | Convergence suite green with 10 clients; N1–N5 suites still pass through the networked path | 6 wk |
 | **N7 — High availability** | Database-backed `IMessageStore`, active/standby election, PostgreSQL replication and failover tooling, service-address takeover, client and device recovery, kill-the-server test rig | Killing the active server mid-churn restores service within 60 s; no confirmed command lost; devices converge with no duplicate or missing RO changes | 5 wk |
 | **N8 — Legacy, Profile 6, interop** | 2.8 TCP and 3.8 SOAP device types, FQID settings, dialect quirks (as ImaginaryMOS M7 allows), `mos-connection` lab | MOS integration suite green on all three transports; interop report written | 3 wk |
 | **N9 — Packaging and polish** | Installers and signing, server service units, i18n and second language, accessibility pass, user and admin documentation | Clean-machine install and first-run on each OS from CI artifacts | 3 wk |
@@ -512,7 +547,7 @@ wanted.
 | Both servers active at once (split brain) sends conflicting updates to devices | Single advisory lock on the database primary; gateway stops on lock or connection loss; witness node; fault-injection tests in N7 |
 | A device misbehaves when its NCS reconnects from another machine mid-show | Floating address so the NCS endpoint never changes; test each transport in N7; record per-device findings |
 | Synchronous database writes for the message store slow the MOS gateway | Measure in the N3 gateway work; batch per poll cycle if needed |
-| PostgreSQL adds installation burden for small sites | Installer for `nrcsd` offers to set up a local database; single-machine layout documented |
+| PostgreSQL adds installation burden for small sites | Installer for `qncsd` offers to set up a local database; single-machine layout documented |
 
 ## 13. Decisions
 
@@ -525,5 +560,6 @@ wanted.
 | D4 | PostgreSQL as the only database, with automatic failover in 1.0 | Decided 2026-11-12 |
 | D5 | Story-level locks | Decided 2026-11-12 |
 | D6 | Rich-text document with a block structure | Decided 2026-11-12 |
-| D7 | Replicated server pair supported on Linux only | **Open** — recommended |
-| — | Product name and default `ncsID` convention | **Open** |
+| D7 | All components supported and CI-tested on Linux, macOS and Windows; the replicated pair actively tested on Linux only | Decided 2026-11-12 |
+| D8 | What "`qncsd` on WebAssembly" means (§9.1) | **Open** |
+| — | Product name QNCS; default `ncsID` `qncs` | Decided 2026-11-12 |
