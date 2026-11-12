@@ -14,7 +14,7 @@ own repository (§3.2); this document sits here only because the plan depends
 on `incs` details.
 
 Decisions are numbered **(D*n*)**. D1, D2, D3, D5 and D6 were settled by the
-owner on 2026-11-12 and are recorded in §13 (D1–D7 decided; D8, WebAssembly, open).
+owner on 2026-11-12 and are recorded in §13 (D1–D8 decided).
 
 ## 1. Summary
 
@@ -62,6 +62,7 @@ as the app.
   updates across clients.
 - High availability: active/standby servers with automatic failover.
 - Saved dock layouts ("workspaces"), multi-monitor floating windows.
+- The client in a browser (WebAssembly), connecting to a native server.
 - Installers for the three platforms; English + one further UI language as
   the i18n proof.
 
@@ -73,7 +74,9 @@ as the app.
   defers them (`plugin/`), and so do we. Revisit after 1.0 via Qt WebEngine.
 - Acting as a MOS *device*. The `imos` library is used in tests only.
 - Mobile clients. The server protocol (§6) is designed not to preclude
-  them. (A WebAssembly build is under discussion — §9.1.)
+  them.
+- Running the server, the MOS gateway or any storage in a browser. The
+  WebAssembly build is a client only (§9.1).
 - Vendor certification against commercial devices. Interop claims are limited
   to what we can test (§10.3).
 
@@ -433,6 +436,7 @@ across split, merge and paste — that is the N0 spike.
 | Server | systemd unit | launchd plist | Windows service |
 | Config/data | `QStandardPaths` everywhere; no hard-coded paths |
 | Database | PostgreSQL from the distribution, Homebrew or the official installer; `qncsd` set-up creates the schema |
+| Browser client | WebAssembly bundle built once in CI and shipped inside every `qncsd` package (§9.1) |
 
 Cross-platform obligations beyond "it compiles":
 
@@ -445,35 +449,48 @@ Cross-platform obligations beyond "it compiles":
   tests) and packages on all three on every merge; release artifacts come
   only from CI.
 
-### 9.1 WebAssembly (D8, open)
+### 9.1 WebAssembly client (D8, decided)
 
-Requirement as stated by the owner: **`qncsd` should also run on
-WebAssembly.** Qt's WebAssembly target runs inside a browser sandbox, which
-rules out three things the native server depends on:
+`qncs-app` is also built for WebAssembly and used from a browser, connecting
+to a native `qncsd` over the same WebSocket protocol as the desktop client.
+The server, the MOS gateway and the database never run in the browser. The
+owner has verified KDDockWidgets on WebAssembly; floating docks stay inside
+the browser tab, which is accepted for this platform.
 
-| Native `qncsd` needs | In a browser |
-|---|---|
-| Listen for client connections | Not possible — a page can only dial out |
-| Listen on MOS ports; 2.8 TCP; 3.8 SOAP server | Not possible; only outbound WebSocket, i.e. MOS 4.0 where the *device* accepts the connection (ImaginaryMOS's `ws40_emscripten` client) |
-| PostgreSQL via `libpq` | Not possible — no raw sockets; would need a different store or a WebSocket bridge to the database |
+What this imposes on the design:
 
-So a WebAssembly build cannot be the newsroom server. What it can be is one
-of the following, and the plan needs the owner to pick:
+- **The app is a pure service client.** `qncs-app` links `service/`'s client
+  side and nothing from `mos/`, Qt Sql or ImaginaryMOS. The in-process
+  service is a native-only development option compiled out on wasm. This
+  boundary is enforced by the build from N1, not retrofitted.
+- **No nested event loops.** No `QDialog::exec()`, `QMessageBox` statics or
+  `QEventLoop` anywhere in the app; dialogs are opened asynchronously. This
+  is a rule for all platforms from N2 so there is one code path.
+- **Single-threaded client.** The app needs no worker threads, so the wasm
+  build is single-threaded and the hosting page needs no cross-origin
+  isolation headers.
+- **`qncsd` serves the client.** The server offers the wasm bundle over
+  HTTPS on the same origin as the WebSocket endpoint, so a browser user
+  needs only a URL. Browsers require a certificate they trust — a site CA
+  or public certificate, not an ad-hoc self-signed one.
+- **Per-user state lives on the server.** Workspaces (dock layouts), column
+  set-ups and shortcut maps are stored per account so they follow the user
+  between desktop and browser; nothing important depends on browser storage
+  or the OS keychain. The browser session holds a token, not a password.
+- **Browser-reserved shortcuts** (close tab, new tab, reload) cannot be
+  intercepted; the default shortcut table avoids them and the wasm build
+  flags conflicts in the shortcut editor.
+- **Fonts, clipboard, printing and file import/export** go through thin
+  platform wrappers, with the browser implementations tested explicitly.
+- **GPL:** serving the wasm bundle is distribution; the About dialog and the
+  server's landing page link the corresponding source.
+- **Toolchain:** the Emscripten version Qt 6.12.0 specifies, pinned in CI
+  like Qt itself.
 
-- **(a) Browser client.** `qncs-app` compiled to WebAssembly, connecting to a
-  native `qncsd` over the existing WebSocket protocol. Qt Widgets and
-  KDDockWidgets' Widgets frontend must both be verified on the wasm target
-  (floating windows cannot leave the browser tab).
-- **(b) Self-contained browser edition.** The service and MOS gateway
-  compiled into the page with the app: single user, MOS 4.0 outbound only,
-  and a second, browser-local storage backend behind the repository
-  interfaces — which reopens the "PostgreSQL only" decision for that build.
-- **(c) Both.**
-
-Whichever is chosen, the wasm build joins CI (build plus headless-browser
-tests) and gets a milestone; `core/`, `service/` and `mos/` are kept free of
-threads-required and filesystem-required code paths from N1 so the option
-stays cheap.
+Delivery is spread across existing milestones rather than added as one: the
+wasm target builds in CI from N0, the no-nested-loops rule applies from N2,
+the browser client becomes functional with the networked client in N6, and
+the bundle ships with `qncsd` in N9.
 
 ## 10. Quality
 
@@ -491,6 +508,9 @@ stays cheap.
 - **GUI:** Qt Test per dock against fake models (`QTest` key/mouse events,
   offscreen platform in CI); script-editor edit sequences checked against
   the resulting body; layout save/restore round-trips across versions.
+- **Browser:** the wasm client driven in headless Chromium and Firefox
+  against a native `qncsd`: log in, open a rundown, edit a story, see
+  another client's change arrive, restore a workspace.
 - **Soak:** 24 h rundown churn against two devices with connection drops; no
   divergence between model and device RO.
 
@@ -513,13 +533,13 @@ Indicative durations assume two to three engineers; treat them as shapes.
 
 | Milestone | Contents | Exit criteria | Indicative |
 |---|---|---|---|
-| **N0 — Bootstrap and spikes** | Repo, licence scaffolding, CMake presets, CI on three OSes, pinned Qt 6.12.0 / KDDockWidgets / ImaginaryMOS. Spikes: (a) KDDockWidgets (Widgets frontend) on 6.12.0 on all three OSes incl. Wayland and mixed DPI; (b) block-structured `QTextDocument` script editor with lossless body round-trip; (c) `incs::Ncs` pumped from a Qt event loop against an in-process `imos::Device` | Green three-OS build of a docking shell; spike findings written up; P0 handshake in the spike | 3 wk |
+| **N0 — Bootstrap and spikes** | Repo, licence scaffolding, CMake presets, CI on three OSes, pinned Qt 6.12.0 / KDDockWidgets / ImaginaryMOS. Spikes: (a) KDDockWidgets (Widgets frontend) on 6.12.0 on all three OSes incl. Wayland and mixed DPI, plus the docking shell built for WebAssembly; (b) block-structured `QTextDocument` script editor with lossless body round-trip; (c) `incs::Ncs` pumped from a Qt event loop against an in-process `imos::Device` | Green three-OS and wasm build of a docking shell; spike findings written up; P0 handshake in the spike | 3 wk |
 | **N1 — Domain core** | Model, command/event service (in-process), PostgreSQL repositories and migrations, in-memory fakes for unit tests, undo/redo, timing engine | Core unit suite green; a rundown survives restart; timing matches a reference table | 4 wk |
 | **N2 — Shell and editing** | Rundown grid, story editor, directory, timing dock, workspaces, shortcut table, theming | A show can be written, ordered and timed with no MOS device; layouts persist | 5 wk |
 | **N3 — MOS gateway, Profiles 0–2** | Device configuration UI, `PeerLink`, 4.0 WebSocket (standard + passive, TLS, auth), RO mirroring through `RunningOrderAuthor`, status feedback, Devices and MOS monitor docks | Edits in the UI converge on an `imos::Device`'s RO under random churn and forced disconnects | 4 wk |
 | **N4 — Media, Profiles 1 and 3** | Media browser, search and paging, drag-to-story, placeholders, `mosItemReplace` ingest | Three-channel workflow green end to end from the UI | 3 wk |
 | **N5 — Prompter and control, Profiles 4, 5, 7** | Story send, cue/take, on-air highlighting, device-originated story edits through the lock table | Prompter round trip green; P7 edit appears in history with attribution | 3 wk |
-| **N6 — Multi-user** | `qncsd`, sync protocol, accounts and roles, story locks, presence, reconnect; gateway moves server-side | Convergence suite green with 10 clients; N1–N5 suites still pass through the networked path | 6 wk |
+| **N6 — Multi-user** | `qncsd`, sync protocol, accounts and roles, story locks, presence, reconnect; gateway moves server-side; server-stored user settings; browser client served by `qncsd` | Convergence suite green with 10 clients; N1–N5 suites still pass through the networked path; browser suite green | 7 wk |
 | **N7 — High availability** | Database-backed `IMessageStore`, active/standby election, PostgreSQL replication and failover tooling, service-address takeover, client and device recovery, kill-the-server test rig | Killing the active server mid-churn restores service within 60 s; no confirmed command lost; devices converge with no duplicate or missing RO changes | 5 wk |
 | **N8 — Legacy, Profile 6, interop** | 2.8 TCP and 3.8 SOAP device types, FQID settings, dialect quirks (as ImaginaryMOS M7 allows), `mos-connection` lab | MOS integration suite green on all three transports; interop report written | 3 wk |
 | **N9 — Packaging and polish** | Installers and signing, server service units, i18n and second language, accessibility pass, user and admin documentation | Clean-machine install and first-run on each OS from CI artifacts | 3 wk |
@@ -543,6 +563,7 @@ wanted.
 | No commercial MOS devices to test against | In-process `imos::Device`, `mos-connection`, record real traffic at pilot sites; say so in release notes |
 | An `incs` API gap blocks a workflow | Budget upstream time in N3–N5; fix in ImaginaryMOS with tests |
 | GPL obligations missed in a release | Source tarball and notices are CI artifacts of the same job that builds installers |
+| Qt Widgets or KDDockWidgets regress on WebAssembly, or a desktop-only API creeps into the app | wasm build and browser tests in CI on every merge from N0; app/service boundary enforced by the build |
 | Multi-user retrofitting | Command/event service from N1; in-process and networked are the same code path with a different carrier |
 | Both servers active at once (split brain) sends conflicting updates to devices | Single advisory lock on the database primary; gateway stops on lock or connection loss; witness node; fault-injection tests in N7 |
 | A device misbehaves when its NCS reconnects from another machine mid-show | Floating address so the NCS endpoint never changes; test each transport in N7; record per-device findings |
@@ -561,5 +582,5 @@ wanted.
 | D5 | Story-level locks | Decided 2026-11-12 |
 | D6 | Rich-text document with a block structure | Decided 2026-11-12 |
 | D7 | All components supported and CI-tested on Linux, macOS and Windows; the replicated pair actively tested on Linux only | Decided 2026-11-12 |
-| D8 | What "`qncsd` on WebAssembly" means (§9.1) | **Open** |
+| D8 | WebAssembly build is the client only, connecting to a native `qncsd`; docks confined to the browser tab accepted | Decided 2026-11-12 |
 | — | Product name QNCS; default `ncsID` `qncs` | Decided 2026-11-12 |
