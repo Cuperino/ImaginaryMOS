@@ -466,13 +466,30 @@ What this imposes on the design:
 - **No nested event loops.** No `QDialog::exec()`, `QMessageBox` statics or
   `QEventLoop` anywhere in the app; dialogs are opened asynchronously. This
   is a rule for all platforms from N2 so there is one code path.
-- **Single-threaded client.** The app needs no worker threads, so the wasm
-  build is single-threaded and the hosting page needs no cross-origin
-  isolation headers.
+- **Multithreaded Qt for WebAssembly (decided).** The browser build uses
+  Qt's multithreaded wasm kit, so the client may use worker threads on every
+  platform (decoding, search, spell-check). Consequences:
+  - The page must be cross-origin isolated. `qncsd` sends the two required
+    response headers (`Cross-Origin-Opener-Policy: same-origin`,
+    `Cross-Origin-Embedder-Policy: require-corp`) on everything it serves,
+    and the bundle loads nothing from other origins.
+  - The worker pool is sized at build time; the app uses a bounded
+    `QThreadPool`, never ad-hoc threads.
+  - The main thread still must not block, so the no-nested-event-loops rule
+    stands.
 - **`qncsd` serves the client.** The server offers the wasm bundle over
   HTTPS on the same origin as the WebSocket endpoint, so a browser user
-  needs only a URL. Browsers require a certificate they trust — a site CA
-  or public certificate, not an ad-hoc self-signed one.
+  needs only a URL.
+- **Self-signed certificates are acceptable (decided).** `qncsd` generates
+  one on first run if none is configured and shows its fingerprint. The
+  desktop client pins it on first connection and warns if it changes. A
+  browser user either accepts the browser's warning or installs the
+  certificate as trusted; serving page and WebSocket from one origin means
+  one acceptance covers both. To confirm in N0: that each target browser
+  still grants cross-origin isolation (needed for threads) to a page whose
+  certificate was accepted through the warning rather than installed. If
+  one does not, installing the certificate becomes the documented
+  requirement for that browser.
 - **Per-user state lives on the server.** Workspaces (dock layouts), column
   set-ups and shortcut maps are stored per account so they follow the user
   between desktop and browser; nothing important depends on browser storage
@@ -484,8 +501,8 @@ What this imposes on the design:
   platform wrappers, with the browser implementations tested explicitly.
 - **GPL:** serving the wasm bundle is distribution; the About dialog and the
   server's landing page link the corresponding source.
-- **Toolchain:** the Emscripten version Qt 6.12.0 specifies, pinned in CI
-  like Qt itself.
+- **Toolchain:** Qt 6.12.0's multithreaded WebAssembly kit and the
+  Emscripten version it specifies, pinned in CI like Qt itself.
 
 Delivery is spread across existing milestones rather than added as one: the
 wasm target builds in CI from N0, the no-nested-loops rule applies from N2,
@@ -533,7 +550,7 @@ Indicative durations assume two to three engineers; treat them as shapes.
 
 | Milestone | Contents | Exit criteria | Indicative |
 |---|---|---|---|
-| **N0 — Bootstrap and spikes** | Repo, licence scaffolding, CMake presets, CI on three OSes, pinned Qt 6.12.0 / KDDockWidgets / ImaginaryMOS. Spikes: (a) KDDockWidgets (Widgets frontend) on 6.12.0 on all three OSes incl. Wayland and mixed DPI, plus the docking shell built for WebAssembly; (b) block-structured `QTextDocument` script editor with lossless body round-trip; (c) `incs::Ncs` pumped from a Qt event loop against an in-process `imos::Device` | Green three-OS and wasm build of a docking shell; spike findings written up; P0 handshake in the spike | 3 wk |
+| **N0 — Bootstrap and spikes** | Repo, licence scaffolding, CMake presets, CI on three OSes, pinned Qt 6.12.0 / KDDockWidgets / ImaginaryMOS. Spikes: (a) KDDockWidgets (Widgets frontend) on 6.12.0 on all three OSes incl. Wayland and mixed DPI, plus the docking shell built for multithreaded WebAssembly and served over a self-signed certificate; (b) block-structured `QTextDocument` script editor with lossless body round-trip; (c) `incs::Ncs` pumped from a Qt event loop against an in-process `imos::Device` | Green three-OS and wasm build of a docking shell; spike findings written up; P0 handshake in the spike | 3 wk |
 | **N1 — Domain core** | Model, command/event service (in-process), PostgreSQL repositories and migrations, in-memory fakes for unit tests, undo/redo, timing engine | Core unit suite green; a rundown survives restart; timing matches a reference table | 4 wk |
 | **N2 — Shell and editing** | Rundown grid, story editor, directory, timing dock, workspaces, shortcut table, theming | A show can be written, ordered and timed with no MOS device; layouts persist | 5 wk |
 | **N3 — MOS gateway, Profiles 0–2** | Device configuration UI, `PeerLink`, 4.0 WebSocket (standard + passive, TLS, auth), RO mirroring through `RunningOrderAuthor`, status feedback, Devices and MOS monitor docks | Edits in the UI converge on an `imos::Device`'s RO under random churn and forced disconnects | 4 wk |
@@ -564,6 +581,7 @@ wanted.
 | An `incs` API gap blocks a workflow | Budget upstream time in N3–N5; fix in ImaginaryMOS with tests |
 | GPL obligations missed in a release | Source tarball and notices are CI artifacts of the same job that builds installers |
 | Qt Widgets or KDDockWidgets regress on WebAssembly, or a desktop-only API creeps into the app | wasm build and browser tests in CI on every merge from N0; app/service boundary enforced by the build |
+| A browser withholds threading support from a page served with an untrusted self-signed certificate | N0 check per browser; fallback is installing the certificate as trusted, documented in set-up |
 | Multi-user retrofitting | Command/event service from N1; in-process and networked are the same code path with a different carrier |
 | Both servers active at once (split brain) sends conflicting updates to devices | Single advisory lock on the database primary; gateway stops on lock or connection loss; witness node; fault-injection tests in N7 |
 | A device misbehaves when its NCS reconnects from another machine mid-show | Floating address so the NCS endpoint never changes; test each transport in N7; record per-device findings |
@@ -582,5 +600,5 @@ wanted.
 | D5 | Story-level locks | Decided 2026-11-12 |
 | D6 | Rich-text document with a block structure | Decided 2026-11-12 |
 | D7 | All components supported and CI-tested on Linux, macOS and Windows; the replicated pair actively tested on Linux only | Decided 2026-11-12 |
-| D8 | WebAssembly build is the client only, connecting to a native `qncsd`; docks confined to the browser tab accepted | Decided 2026-11-12 |
+| D8 | WebAssembly build is the client only, connecting to a native `qncsd`; docks confined to the browser tab accepted; multithreaded Qt for WebAssembly; self-signed certificates acceptable | Decided 2026-11-12 |
 | — | Product name QNCS; default `ncsID` `qncs` | Decided 2026-11-12 |
