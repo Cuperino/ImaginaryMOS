@@ -1,7 +1,7 @@
 # QNCS Plan — a newsroom computer system on ImaginaryMOS, Qt 6.12.0 and KDDockWidgets
 
 **Status:** proposal (2026-11-11). Nothing here is built yet.
-**Product name:** **QNCS** (Q News Control System). Binaries and libraries
+**Product name:** **QNCS** (Q Newsroom Control System). Binaries and libraries
 use the `qncs` prefix (`qncs-app`, `qncsd`, `qncs-core`, …). Default `ncsID`:
 `qncs`, configurable per site (a site using Profile 6 sets an FQID instead).
 **Fixed constraints (from the request):** built on ImaginaryMOS; Qt **6.12.0**;
