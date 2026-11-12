@@ -12,8 +12,8 @@ headless scripted test peer; the NRCS is an end-user product. It lives in its
 own repository (§3.2); this document sits here only because the plan depends
 on `incs` details.
 
-Decisions marked **(D*n*)** are recommendations that need the owner's
-confirmation; everything else follows from the constraints.
+Decisions are numbered **(D*n*)**. D1, D2, D3, D5 and D6 were settled by the
+owner on 2026-11-12 and are recorded in §13; D4 (database) is still open.
 
 ## 1. Summary
 
@@ -33,7 +33,7 @@ The architecture is three layers in one codebase:
 2. **`nrcs-mos`** — the MOS gateway: one `incs::Ncs` + `RunningOrderAuthor` +
    transport endpoint per configured device, pumped from a Qt event loop,
    translating between the domain model and MOS.
-3. **`nrcs-app`** — the Qt Quick desktop client on KDDockWidgets.
+3. **`nrcs-app`** — the Qt Widgets desktop client on KDDockWidgets.
 
 A headless **`nrcsd`** composes (1)+(2) as the newsroom server. Until the
 network layer lands (N6) the desktop app embeds the same service in-process
@@ -86,11 +86,8 @@ demos and tests.
 | OpenSSL 3 (wss) | Apache-2.0 | Compatible |
 | SQLite | Public domain | Compatible |
 
-**(D1) SPDX identifier: `GPL-3.0-only`.** The request says "GPLv3", and
-because KDDockWidgets offers no "or later", distributed binaries are GPLv3
-regardless. `GPL-3.0-or-later` on our own sources is the alternative if
-future-proofing matters more than simplicity; decide before the first commit,
-since relicensing later needs every contributor's consent.
+**(D1, decided) SPDX identifier: `GPL-3.0-only`.** KDDockWidgets offers no
+"or later" either, so sources and binaries carry the same terms.
 
 Consequences to plan for:
 
@@ -101,16 +98,16 @@ Consequences to plan for:
   content from ImaginaryMOS is carried through.
 - No Mac App Store or Microsoft Store distribution with DRM terms; ship
   direct downloads.
-- Contributions under DCO sign-off, no CLA **(D2)** — which means the project
-  cannot later be dual-licensed. Choose a CLA instead if that door must stay
-  open.
+- **(D2, decided)** Contributions require the owner's CLA
+  (<https://github.com/Cuperino/Signatures/blob/main/CLA.md>). A CLA check
+  runs on every pull request from N0; `CONTRIBUTING.md` links the text.
 - Protocol fixes found while building the NRCS go **upstream into
   ImaginaryMOS under Apache-2.0**, never into a GPL fork of it.
 
 ### 3.2 Repository
 
-A new repository, separate from ImaginaryMOS, so the Apache-2.0 library never
-acquires GPL files. Proposed layout:
+An entirely new repository (decided), separate from ImaginaryMOS, so the
+Apache-2.0 library never acquires GPL files. Proposed layout:
 
 ```
 nrcs/
@@ -122,10 +119,11 @@ nrcs/
   mos/                   # nrcs-mos    (nrcs-core + imos::incs + imos::transports)
   service/               # nrcs-service: command/event API, auth, sync protocol
   server/                # nrcsd       (headless; Qt6::Network, Qt6::WebSockets)
-  app/                   # nrcs-app    (Qt Quick + KDDockWidgets)
-    viewmodels/          # C++ QAbstractItemModels / QObjects exposed to QML
-    qml/                 # QML modules, one per dock
-  tests/                 # unit, integration (real imos::Device peers), QML
+  app/                   # nrcs-app    (Qt Widgets + KDDockWidgets)
+    models/              # QAbstractItemModels and presenters; no widget code
+    docks/               # one widget class per dock
+    editor/              # script editor (QTextDocument-based)
+  tests/                 # unit, integration (real imos::Device peers), GUI
   packaging/             # AppImage/Flatpak, dmg, Windows installer
 ```
 
@@ -135,9 +133,9 @@ nrcs/
 
 - Pinned exactly; CI installs that version on all three platforms and fails
   on drift. Patch bumps (6.12.x) are deliberate PRs.
-- Modules: Core, Gui, Qml, Quick, QuickControls2, Sql (SQLite driver),
-  Network, WebSockets (client↔server only — MOS traffic uses ImaginaryMOS's
-  own transports), Concurrent, LinguistTools, Test, QuickTest.
+- Modules: Core, Gui, Widgets, Sql (SQLite driver), Network, WebSockets
+  (client↔server only — MOS traffic uses ImaginaryMOS's own transports),
+  Concurrent, LinguistTools, Test. No QML anywhere in the product.
 - C++20, CMake with presets mirroring ImaginaryMOS's (`linux`, `macos`,
   `windows`, `linux-asan`, `linux-tsan`, `linux-coverage`). Presets must
   forward `CMAKE_POLICY_VERSION_MINIMUM=3.5`, which ImaginaryMOS's vendored
@@ -146,28 +144,24 @@ nrcs/
   on macOS, MSVC 2022 on Windows. Confirm each against the Qt 6.12 supported
   platforms list in N0 and record minimum OS versions there.
 
-### 4.2 UI stack **(D3): Qt Quick, with KDDockWidgets' Qt Quick frontend**
+### 4.2 UI stack (D3, decided): Qt Widgets for everything
 
-KDDockWidgets selects its frontend at build time
-(`KDDockWidgets_FRONTENDS=qtquick`, `KDDockWidgets_QT6=ON`), so this is a
-one-way choice per binary.
+KDDockWidgets selects its frontend at build time; we build it with
+`KDDockWidgets_FRONTENDS=qtwidgets`, `KDDockWidgets_QT6=ON`. This is its
+original and most exercised frontend, and Widgets gives the two controls the
+product leans on hardest ready-made: `QTableView` over a
+`QAbstractItemModel` for the rundown grid, and `QTextEdit`/`QTextDocument`
+for the script editor (§8.3).
 
-Why Qt Quick: GPU-rendered dense lists and a themable dark control-room UI,
-`TableView` for the rundown grid, and a far easier path to a touch-friendly
-gallery layout later. What it costs: the Qt Widgets frontend of KDDockWidgets
-is the older and more exercised one, and Qt Quick has no drop-in equivalent
-of `QTextEdit` with custom inline objects for the script editor (§7.3).
-
-The mitigation is structural: **all behaviour lives in C++ view-models**
-(`app/viewmodels/`), QML is presentation only. If the N0 spikes (§11) fail,
-switching to Widgets replaces `app/qml/` and the dock registration, not the
-application.
+Behaviour still lives outside widget classes — in item models and presenter
+objects under `app/models/` — so it can be unit-tested without showing a
+window.
 
 ### 4.3 KDDockWidgets
 
 - Pinned 2.x tag as a submodule, built from source as part of our tree so
-  the Qt version always matches. Its Qt Quick frontend reaches into Qt
-  internals, so every Qt bump re-runs the docking test suite before merge.
+  the Qt version always matches. Every Qt bump re-runs the docking test
+  suite before merge.
 - Used for: dock registration, tabbing/splitting/floating, `LayoutSaver`
   serialisation, affinities (keep story editors out of the tool-dock areas),
   and a persistent central area holding open rundowns as tabs.
@@ -241,7 +235,7 @@ event.
 - **Networked (N6):** the same messages over a WebSocket (TLS), CBOR-encoded,
   with a protocol version handshake. A reconnecting client sends its last
   seen event number and receives the gap or a snapshot.
-- **Concurrency model (D5): story-level pessimistic locks**, not
+- **Concurrency model (D5, decided): story-level pessimistic locks**, not
   collaborative text merging. One user edits a story body at a time; others
   see it read-only with the holder's name; locks expire on disconnect and can
   be broken by a privileged role. Rundown structure (order, flags) is
@@ -318,7 +312,7 @@ Two policies need a decision per device and therefore a settings UI:
 
 | Dock | Content |
 |---|---|
-| **Rundown** (central, tabbed) | `TableView` grid over a C++ model: configurable columns, inline edit, drag-reorder, multi-select, status colouring, timing columns |
+| **Rundown** (central, tabbed) | `QTableView` grid over a C++ model: configurable columns, inline edit, drag-reorder, multi-select, status colouring, timing columns |
 | **Story editor** | Script body + metadata; several can be open, tabbed or floated |
 | **Directory** | Rundown folders, open/create/archive |
 | **Media browser** | Per-device object list, search, thumbnails where the device provides them; drag source |
@@ -331,25 +325,41 @@ Workspaces (saved KDDockWidgets layouts) ship as presets — *Writer*,
 *Producer*, *Engineer* — and users save their own; layouts are versioned so
 an upgrade that adds a dock does not discard them.
 
-### 8.2 Rules for the QML layer
+### 8.2 Rules for the widget layer
 
-- One QML module per dock, registered declaratively (`qt_add_qml_module`),
-  compiled ahead of time, `qmllint` clean in CI.
-- No business logic or MOS types in QML; view-models expose
-  `QAbstractItemModel`s and invokable commands only.
-- Every action reachable from the keyboard with a remappable shortcut —
-  rundown operators do not use the mouse on air.
-- Theme through one `Theme` singleton; dark default, light available.
+- One widget class per dock under `app/docks/`; it owns layout and painting
+  only. State and behaviour sit in a model or presenter that has no
+  `QWidget` dependency.
+- No MOS types above `nrcs-mos`; the UI sees domain types and service
+  commands only.
+- Every action is a `QAction` in one central table, reachable from the
+  keyboard with a remappable shortcut — rundown operators do not use the
+  mouse on air. The same table feeds menus, toolbars and the macOS menu bar.
+- Custom painting goes through delegates and the palette, not per-widget
+  style sheets; dark default, light available.
 
-### 8.3 Script editor
+### 8.3 Script editor (D6, decided): rich-text document with a block structure
 
-The MOS story body is already a sequence of typed blocks, so the editor is
-**block-based (D6)**: a list of presenter-text blocks (`TextArea`),
-production-instruction blocks and item chips, with keyboard navigation and
-selection that crosses block boundaries handled by the view-model. This
-avoids fighting Qt Quick's lack of custom inline text objects and makes the
-body↔`storyBody` mapping lossless by construction. Cross-block selection and
-IME behaviour are the hard parts and are spiked in N0.
+One `QTextDocument` per story, edited in a `QTextEdit` subclass. The MOS
+story body is a sequence of typed blocks, and the document mirrors it:
+
+- Each `QTextBlock` carries a **block type** in its format (presenter text,
+  production instruction, item) plus a stable block ID in its user data.
+  Type determines styling, whether the block counts toward read time, and
+  how it serialises (`<p>`, `<pi>`, `<storyItem>`).
+- An **item** is a non-editable block rendered as a chip through a custom
+  `QTextObjectInterface`; it holds only the item ID, and the item's data
+  stays in the domain model.
+- The document is a *view* of the domain body. A converter maps
+  body↔document in both directions and is the single place the mapping
+  lives; edits are turned into `EditBody` commands block by block, so undo,
+  history and MOS output see blocks, never HTML.
+- Character formatting is limited to what `storyBody` can carry; paste is
+  sanitised down to that set.
+
+Selection, IME, undo grouping, find/replace and spell-check hooks come from
+`QTextEdit`. The work is in the converter and in keeping block IDs stable
+across split, merge and paste — that is the N0 spike.
 
 ## 9. Platforms and packaging
 
@@ -381,14 +391,15 @@ Cross-platform obligations beyond "it compiles":
   Assertions are on the device's resulting RO, not on message text.
 - **Multi-user:** N scripted clients against one `nrcsd`, randomised command
   interleavings, convergence checked; lock and reconnect cases.
-- **QML:** Qt Quick Test per dock against fake view-models; layout
-  save/restore round-trips across versions.
+- **GUI:** Qt Test per dock against fake models (`QTest` key/mouse events,
+  offscreen platform in CI); script-editor edit sequences checked against
+  the resulting body; layout save/restore round-trips across versions.
 - **Soak:** 24 h rundown churn against two devices with connection drops; no
   divergence between model and device RO.
 
 ### 10.2 Gates in CI
 
-clang-format, clang-tidy, clazy, `qmllint`; ASan/UBSan and TSan presets on
+clang-format, clang-tidy, clazy; ASan/UBSan and TSan presets on
 Linux; ≥ 85 % line coverage on `core/` and `mos/`; REUSE licence lint; a
 dependency-pin check (Qt = 6.12.0, submodule SHAs).
 
@@ -405,7 +416,7 @@ Indicative durations assume two to three engineers; treat them as shapes.
 
 | Milestone | Contents | Exit criteria | Indicative |
 |---|---|---|---|
-| **N0 — Bootstrap and spikes** | Repo, licence scaffolding, CMake presets, CI on three OSes, pinned Qt 6.12.0 / KDDockWidgets / ImaginaryMOS. Spikes: (a) KDDockWidgets Qt Quick on 6.12.0 on all three OSes incl. Wayland and mixed DPI; (b) block-based script editor; (c) `incs::Ncs` pumped from a Qt event loop against an in-process `imos::Device` | Green three-OS build of a docking shell; written go/no-go on D3 and D6; P0 handshake in the spike | 3 wk |
+| **N0 — Bootstrap and spikes** | Repo, licence scaffolding, CMake presets, CI on three OSes, pinned Qt 6.12.0 / KDDockWidgets / ImaginaryMOS. Spikes: (a) KDDockWidgets (Widgets frontend) on 6.12.0 on all three OSes incl. Wayland and mixed DPI; (b) block-structured `QTextDocument` script editor with lossless body round-trip; (c) `incs::Ncs` pumped from a Qt event loop against an in-process `imos::Device` | Green three-OS build of a docking shell; spike findings written up; P0 handshake in the spike | 3 wk |
 | **N1 — Domain core** | Model, command/event service (in-process), SQLite repositories and migrations, undo/redo, timing engine | Core unit suite green; a rundown survives restart; timing matches a reference table | 4 wk |
 | **N2 — Shell and editing** | Rundown grid, story editor, directory, timing dock, workspaces, shortcut table, theming | A show can be written, ordered and timed with no MOS device; layouts persist | 5 wk |
 | **N3 — MOS gateway, Profiles 0–2** | Device configuration UI, `PeerLink`, 4.0 WebSocket (standard + passive, TLS, auth), RO mirroring through `RunningOrderAuthor`, status feedback, Devices and MOS monitor docks | Edits in the UI converge on an `imos::Device`'s RO under random churn and forced disconnects | 4 wk |
@@ -427,8 +438,8 @@ wanted.
 
 | Risk | Mitigation |
 |---|---|
-| KDDockWidgets' Qt Quick frontend misbehaves on Qt 6.12.0 or on one platform (Wayland especially) | N0 spike (a) before any UI work; behaviour in C++ view-models keeps a Widgets fallback affordable; upstream fixes under its GPL terms |
-| Script editor in Qt Quick is harder than estimated | N0 spike (b); block model is independent of the widget toolkit |
+| KDDockWidgets misbehaves on Qt 6.12.0 or on one platform (Wayland especially) | N0 spike (a) before any UI work; XCB default on Linux as the fallback; upstream fixes under its GPL terms |
+| Block identity in the script editor breaks under split/merge/paste, corrupting the body mapping | N0 spike (b); converter covered by round-trip property tests |
 | Scope creep — an NRCS can absorb unlimited features | §2.2 is the contract; additions need a milestone, not a branch |
 | Qt 6.12.0 pin ages (security fixes arrive in later patches) | Pin is exact but reviewed each patch release; bump is one PR gated by the full suite |
 | No commercial MOS devices to test against | In-process `imos::Device`, `mos-connection`, record real traffic at pilot sites; say so in release notes |
@@ -436,12 +447,15 @@ wanted.
 | GPL obligations missed in a release | Source tarball and notices are CI artifacts of the same job that builds installers |
 | Multi-user retrofitting | Command/event service from N1; standalone is the same code path with a different carrier |
 
-## 13. Decisions needed before N0 starts
+## 13. Decisions
 
-1. **D1** — `GPL-3.0-only` (recommended) or `GPL-3.0-or-later`.
-2. **D2** — DCO (recommended) or CLA.
-3. **D3** — Qt Quick (recommended, subject to the N0 spike) or Qt Widgets.
-4. **D4** — SQLite-only at 1.0 (recommended) or PostgreSQL from the start.
-5. **D5** — story-level locking (recommended) or collaborative editing.
-6. **D6** — block-based script editor (recommended) or rich-text document.
-7. Product name and default `ncsID` convention.
+| | Decision | Status |
+|---|---|---|
+| — | Entirely new repository | Decided 2026-11-12 |
+| D1 | Licence identifier `GPL-3.0-only` | Decided 2026-11-12 |
+| D2 | Contributions under the owner's CLA | Decided 2026-11-12 |
+| D3 | Qt Widgets for the whole UI | Decided 2026-11-12 |
+| D4 | SQLite only at 1.0 vs PostgreSQL | **Open** — under discussion |
+| D5 | Story-level locks | Decided 2026-11-12 |
+| D6 | Rich-text document with a block structure | Decided 2026-11-12 |
+| — | Product name and default `ncsID` convention | **Open** |
