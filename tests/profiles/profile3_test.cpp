@@ -974,6 +974,54 @@ TEST(Profile3, ItemReplaceUnknownStoryNacksIntoResync) {
     EXPECT_EQ(fx.device->runningOrderModel().storyIDs("RO1"), (std::vector<std::string>{"s1"}));
 }
 
+// 19b. Ownership (spec 3.3.4: a MOS replaces only item references it
+//      owns): a replace aimed at another MOS's item, or one handing an item
+//      to another MOS, is NACKed and merges nothing.
+TEST(Profile3, ItemReplaceOfAnotherMossItemIsRefused) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    ASSERT_TRUE(fx.ncs->author().create("RO1", "Five PM").ok());
+    ASSERT_TRUE(fx.ncs->author().insertStory("RO1", RunningOrderAuthor::makeStory("s1")).ok());
+    ASSERT_TRUE(
+        fx.ncs->author()
+            .insertItem("RO1", "s1",
+                        RunningOrderAuthor::makeItem("mine", "O1", TwoRoleFixture::kMosID, "Mine"))
+            .ok());
+    ASSERT_TRUE(
+        fx.ncs->author()
+            .insertItem("RO1", "s1",
+                        RunningOrderAuthor::makeItem("theirs", "O2", "cg.example.mos", "Theirs"))
+            .ok());
+    ASSERT_TRUE(fx.ncs->author().commit("RO1").ok());
+    fx.settle();
+
+    const auto replace = [&](const std::string& xml) {
+        EXPECT_TRUE(fx.device->replaceItem("RO1", "s1", parseSubtree(xml)).ok());
+        fx.settle();
+        std::optional<incs::ItemReplaceIngest> ingest = fx.ncs->nextItemReplace();
+        EXPECT_TRUE(ingest.has_value());
+        return ingest.value_or(incs::ItemReplaceIngest{});
+    };
+
+    const incs::ItemReplaceIngest foreign =
+        replace("<item><itemID>theirs</itemID><objID>HIJACK</objID></item>");
+    EXPECT_FALSE(foreign.ok);
+    EXPECT_NE(foreign.detail.find("another MOS"), std::string::npos);
+    EXPECT_EQ(fx.ncs->author().desired().item("RO1", "s1", "theirs")->childText("objID"), "O2");
+
+    const incs::ItemReplaceIngest handOff =
+        replace("<item><itemID>mine</itemID><mosID>cg.example.mos</mosID></item>");
+    EXPECT_FALSE(handOff.ok);
+    EXPECT_EQ(fx.ncs->author().desired().item("RO1", "s1", "mine")->childText("mosID"),
+              TwoRoleFixture::kMosID);
+
+    const incs::ItemReplaceIngest own =
+        replace("<item><itemID>mine</itemID><itemSlug>Mine, final</itemSlug></item>");
+    EXPECT_TRUE(own.ok) << own.detail;
+    EXPECT_EQ(fx.ncs->author().desired().item("RO1", "s1", "mine")->childText("itemSlug"),
+              "Mine, final");
+}
+
 // 20. Resync preference: with the peer's listMachInfo advertising Profile 3,
 //     directory resync issues paged match-all mosReqObjList queries (chained
 //     until the total is covered); a P1-only peer falls back to mosReqAll.

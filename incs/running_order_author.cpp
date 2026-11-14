@@ -801,7 +801,24 @@ void RunningOrderAuthor::ingestItemReplace(const imos::SessionEvent& event) {
         }
     }
 
-    imos::Result<void> applied = desired_.apply(event.message);
+    // Spec 3.3.4: a device replaces only item references it owns. An item
+    // that names another mosID, or a replacement that would hand it to
+    // one, is refused before anything is merged.
+    imos::Result<void> applied{};
+    const std::string& sender = session_->config().mosID;
+    const XmlNode* target = desired_.item(ingest.roID, ingest.storyID, ingest.itemID);
+    const XmlNode* incoming = body != nullptr ? body->firstChildElement("item") : nullptr;
+    const std::string claimed = incoming != nullptr ? incoming->childText("mosID") : std::string{};
+    if (target != nullptr && target->childText("mosID") != sender) {
+        applied = imos::makeError(imos::ErrorCode::InvalidArgument,
+                                  "item " + ingest.itemID + " belongs to another MOS (" +
+                                      target->childText("mosID") + ")");
+    } else if (!claimed.empty() && claimed != sender) {
+        applied = imos::makeError(imos::ErrorCode::InvalidArgument,
+                                  "a MOS cannot hand item " + ingest.itemID + " to " + claimed);
+    } else {
+        applied = desired_.apply(event.message);
+    }
     ingest.ok = applied.ok();
     std::string roStatus = "OK";
     if (applied.ok()) {

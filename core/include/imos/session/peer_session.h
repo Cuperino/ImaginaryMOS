@@ -150,6 +150,9 @@ public:
     /// Earliest instant poll() has timed work due, for host scheduling.
     [[nodiscard]] std::optional<MonotonicTime> nextDeadline() const;
 
+    /// The configuration this session was built with (its mosID/ncsID pair).
+    [[nodiscard]] const SessionConfig& config() const noexcept { return config_; }
+
     [[nodiscard]] bool channelIdle(Channel channel) const;
     [[nodiscard]] std::size_t queueDepth(Channel channel) const;
 
