@@ -124,6 +124,8 @@ struct Rig {
     int port = 0;
     /// Installed on the server and the client before they start, when set.
     imos::transports::ActivityHandler activity;
+    /// The registered peer's own verifier (ServerPeerConfig::credentials).
+    imos::transports::ws40::ICredentialVerifier* peerCredentials = nullptr;
 
     void startServer(WireEncoding peerEncoding = WireEncoding::Ucs2Be,
                      imos::transports::ws40::ICredentialVerifier* credentials = nullptr) {
@@ -139,6 +141,7 @@ struct Rig {
         peer.mosID = kMosID;
         peer.ncsID = kNcsID;
         peer.wireEncoding = peerEncoding;
+        peer.credentials = peerCredentials;
         ASSERT_TRUE(server->addPeer(peer).ok());
         ASSERT_TRUE(server->start().ok());
         port = server->port();
@@ -191,6 +194,12 @@ struct Rig {
         }
         if (server != nullptr) {
             while (auto event = server->nextEvent()) {
+                const bool known = ncsSession != nullptr && event->mosID == kMosID;
+                if (!known && (event->kind == ServerEvent::Kind::ChannelConnected ||
+                               event->kind == ServerEvent::Kind::ChannelDisconnected ||
+                               event->kind == ServerEvent::Kind::Frame)) {
+                    continue;  // a peer this host has no session for (removed, or another)
+                }
                 switch (event->kind) {
                     case ServerEvent::Kind::ChannelConnected:
                         ncsSession->onChannelConnected(event->channel);
@@ -710,6 +719,118 @@ TEST(Ws40Transport, DuplicateChannelClaimIsRejected) {
     ASSERT_TRUE(rig.deviceSession->enqueue(Channel::Ro, makeReqMachInfo()).ok());
     ASSERT_TRUE(rig.waitFor(
         [&] { return findAck(rig.deviceEvents, MessageType::ListMachInfo) != nullptr; }));
+}
+
+// One listener, several devices, each with its own password: a device's
+// credentials admit only its own identity, and an unknown identity is refused
+// exactly like a wrong password, revealing nothing.
+TEST(Ws40Transport, PerPeerCredentialsAdmitOnlyTheirOwnIdentity) {
+    FixedCredentialVerifier mine{{"vtr7", "mine"}};
+    FixedCredentialVerifier theirs{{"cg", "theirs"}};
+    Rig rig;
+    rig.peerCredentials = &mine;
+    rig.startServer();
+    ServerPeerConfig other;  // registered after start: allowed
+    other.mosID = "cg.example.mos";
+    other.ncsID = kNcsID;
+    other.credentials = &theirs;
+    ASSERT_TRUE(rig.server->addPeer(other).ok());
+
+    // The other device's valid credentials do not admit this identity.
+    rig.startClient({Channel::Ro}, false, WireEncoding::Ucs2Be,
+                    imos::ws40::BasicCredentials{"cg", "theirs"});
+    ASSERT_TRUE(rig.waitFor([&] { return !rig.rejectedEvents.empty(); }));
+    EXPECT_NE(rig.rejectedEvents[0].diagnostic.find("invalid credentials"), std::string::npos);
+    rig.client->stop();
+
+    // An identity nobody registered: refused as unauthorized, not as unknown.
+    rig.rejectedEvents.clear();
+    {
+        ClientConfig config;
+        config.endpointUrl = "ws://127.0.0.1:" + std::to_string(rig.port) + "/mos/Communication";
+        config.mosID = "imposter.example.mos";
+        config.ncsID = kNcsID;
+        config.channels = {Channel::Ro};
+        config.auth = imos::ws40::BasicCredentials{"vtr7", "mine"};
+        SystemClock clock;
+        Ws40Client imposter{config, &clock};
+        imos::InMemoryMessageStore store;
+        PeerSession dummy{sessionConfig(), PeerSession::Dependencies{&clock, &imposter, &store}};
+        ASSERT_TRUE(imposter.start().ok());
+        ASSERT_TRUE(rig.waitFor([&] {
+            imposter.pump(dummy);
+            return !rig.rejectedEvents.empty();
+        }));
+        EXPECT_NE(rig.rejectedEvents[0].diagnostic.find("invalid credentials"), std::string::npos);
+        EXPECT_EQ(rig.rejectedEvents[0].diagnostic.find("unknown"), std::string::npos);
+        imposter.stop();
+    }
+
+    // Its own credentials connect, and traffic flows.
+    rig.startClient({Channel::Ro}, false, WireEncoding::Ucs2Be,
+                    imos::ws40::BasicCredentials{"vtr7", "mine"});
+    ASSERT_TRUE(rig.waitForConnected(Channel::Ro));
+    ASSERT_TRUE(rig.deviceSession->enqueue(Channel::Ro, makeReqMachInfo()).ok());
+    ASSERT_TRUE(rig.waitFor(
+        [&] { return findAck(rig.deviceEvents, MessageType::ListMachInfo) != nullptr; }));
+}
+
+// Removing one peer closes only its connections; re-adding it lets it back in.
+TEST(Ws40Transport, RemovingAPeerDropsOnlyItsConnections) {
+    Rig rig;
+    rig.startServer();
+    rig.startClient({Channel::Mom, Channel::Ro}, /*passive=*/true);
+    ASSERT_TRUE(rig.waitForConnected(Channel::Ro));
+
+    // A second device on the same listener.
+    ServerPeerConfig otherPeer;
+    otherPeer.mosID = "cg.example.mos";
+    otherPeer.ncsID = kNcsID;
+    ASSERT_TRUE(rig.server->addPeer(otherPeer).ok());
+    ClientConfig config;
+    config.endpointUrl = "ws://127.0.0.1:" + std::to_string(rig.port) + "/mos/Communication";
+    config.mosID = otherPeer.mosID;
+    config.ncsID = kNcsID;
+    config.channels = {Channel::Ro};
+    config.passive = true;
+    SystemClock clock;
+    Ws40Client other{config, &clock};
+    imos::InMemoryMessageStore store;
+    PeerSession otherSession{sessionConfig(), PeerSession::Dependencies{&clock, &other, &store}};
+    ASSERT_TRUE(other.start().ok());
+    const auto pumpBoth = [&] { other.pump(otherSession); };
+    ASSERT_TRUE(rig.waitFor([&] {
+        pumpBoth();
+        return other.isConnected(Channel::Ro);
+    }));
+
+    // The session over the peer's transport goes first, as the contract says.
+    rig.ncsResponder.reset();
+    rig.ncsSession.reset();
+    ASSERT_TRUE(rig.server->removePeer(kMosID, kNcsID).ok());
+    EXPECT_FALSE(rig.server->removePeer(kMosID, kNcsID).ok());
+    ASSERT_TRUE(rig.waitFor([&] {
+        pumpBoth();
+        return !rig.client->isConnected(Channel::Ro);
+    }));
+    // The other device is untouched for a while, through the client's retries.
+    for (int i = 0; i < 20; ++i) {
+        pumpBoth();
+        rig.pumpOnce();
+        ASSERT_TRUE(other.isConnected(Channel::Ro));
+        std::this_thread::sleep_for(std::chrono::milliseconds{10});
+    }
+
+    // Re-registered, the removed device is let back in.
+    ServerPeerConfig again;
+    again.mosID = kMosID;
+    again.ncsID = kNcsID;
+    ASSERT_TRUE(rig.server->addPeer(again).ok());
+    ASSERT_TRUE(rig.waitFor([&] {
+        pumpBoth();
+        return rig.client->isConnected(Channel::Ro);
+    }));
+    other.stop();
 }
 
 TEST(Ws40Transport, UnknownPeerPairingIsRejected) {

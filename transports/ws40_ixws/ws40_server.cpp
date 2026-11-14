@@ -3,12 +3,14 @@
 
 #include <imos/transports/ws40.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <deque>
 #include <map>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 #include <ixwebsocket/IXGetFreePort.h>
 #include <ixwebsocket/IXWebSocket.h>
@@ -189,7 +191,31 @@ struct Ws40Server::Impl {
     /// the channel-slot claim. Returns the claim on success.
     std::optional<Claim> validateOpen(const std::shared_ptr<ix::WebSocket>& socket,
                                       const ix::WebSocketOpenInfo& openInfo) {
-        if (config.credentials != nullptr) {
+        // Which verifier applies depends on the identity the connection
+        // claims - read here, trusted only after the credentials check.
+        Result<imos::ws40::ConnectionParams> params =
+            imos::ws40::parseConnectionParams(openInfo.uri);
+        ICredentialVerifier* verifier = config.credentials;
+        bool unknownBehindPerPeerAuth = false;
+        {
+            const std::scoped_lock lock{mutex};
+            const bool anyPerPeer = std::any_of(peers.begin(), peers.end(), [](const auto& entry) {
+                return entry.second.config.credentials != nullptr;
+            });
+            const auto it = params.ok()
+                                ? peers.find(peerKeyOf(params.value().mosID, params.value().ncsID))
+                                : peers.end();
+            if (it != peers.end() && it->second.config.credentials != nullptr) {
+                verifier = it->second.config.credentials;
+            } else if (it == peers.end() && verifier == nullptr && anyPerPeer) {
+                unknownBehindPerPeerAuth = true;
+            }
+        }
+        if (unknownBehindPerPeerAuth) {
+            reject(*socket, detail::kCloseUnauthorized, "invalid credentials");
+            return std::nullopt;
+        }
+        if (verifier != nullptr) {
             const auto header = openInfo.headers.find("Authorization");
             if (header == openInfo.headers.end()) {
                 reject(*socket, detail::kCloseUnauthorized,
@@ -203,15 +229,12 @@ struct Ws40Server::Impl {
                        "unparseable Authorization header: " + presented.error().message);
                 return std::nullopt;
             }
-            if (!config.credentials->verify(presented.value().username,
-                                            presented.value().password)) {
+            if (!verifier->verify(presented.value().username, presented.value().password)) {
                 reject(*socket, detail::kCloseUnauthorized, "invalid credentials");
                 return std::nullopt;
             }
         }
 
-        Result<imos::ws40::ConnectionParams> params =
-            imos::ws40::parseConnectionParams(openInfo.uri);
         if (!params.ok()) {
             reject(*socket, detail::kCloseBadParameters, params.error().message);
             return std::nullopt;
@@ -389,6 +412,29 @@ Result<void> Ws40Server::addPeer(const ServerPeerConfig& peer) {
     }
     it->second.config = peer;
     it->second.transport = std::make_unique<Impl::PeerTransport>(impl_.get(), key);
+    return {};
+}
+
+Result<void> Ws40Server::removePeer(std::string_view mosID, std::string_view ncsID) {
+    std::vector<std::shared_ptr<ix::WebSocket>> held;
+    {
+        const std::scoped_lock lock{impl_->mutex};
+        const auto it = impl_->peers.find(peerKeyOf(mosID, ncsID));
+        if (it == impl_->peers.end()) {
+            return makeError(ErrorCode::NotFound, "peer is not registered");
+        }
+        for (const std::weak_ptr<ix::WebSocket>& claim : it->second.claims) {
+            if (std::shared_ptr<ix::WebSocket> socket = claim.lock()) {
+                held.push_back(std::move(socket));
+            }
+        }
+        impl_->peers.erase(it);
+    }
+    // Closed outside the lock: the close callbacks take it (releaseClaim),
+    // and find the peer gone, which is exactly right.
+    for (const std::shared_ptr<ix::WebSocket>& socket : held) {
+        socket->close(detail::kCloseUnknownPeer, "peer removed");
+    }
     return {};
 }
 

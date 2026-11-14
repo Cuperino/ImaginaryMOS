@@ -209,6 +209,14 @@ struct ServerPeerConfig {
     std::string ncsID;
     /// §3.4 expectation for this peer's frames (binary UCS-2 by default).
     encoding::WireEncoding wireEncoding = encoding::WireEncoding::Ucs2Be;
+    /// This peer's own credential check, used instead of
+    /// ServerConfig::credentials for connections claiming this mosID/ncsID
+    /// pairing — so one device's password cannot claim another device's
+    /// identity on a shared listener. Must outlive the registration. When
+    /// any peer has one, a connection claiming an unknown or malformed
+    /// identity is refused as unauthorized (4401), not as unknown (4404),
+    /// so the refusal reveals nothing about which identities exist.
+    ICredentialVerifier* credentials = nullptr;
 };
 
 struct ServerConfig {
@@ -257,7 +265,16 @@ public:
     Ws40Server& operator=(const Ws40Server&) = delete;
 
     /// Register a peer relationship; must precede connections claiming it.
+    /// Allowed before or after start().
     Result<void> addPeer(const ServerPeerConfig& peer);
+    /// Unregister a peer and close the connections it holds, leaving every
+    /// other peer's connections alone (a shared listener can lose one device
+    /// without dropping the rest). Its transport — the reference
+    /// transportFor() returned — is destroyed: whatever used it, such as the
+    /// peer's PeerSession or Ws40Endpoint, must be gone first. Events of the
+    /// peer still queued are delivered by nextEvent() as before; hosts drop
+    /// them for identities they no longer know. NotFound if not registered.
+    Result<void> removePeer(std::string_view mosID, std::string_view ncsID);
 
     /// Bind and listen. With config.port == 0 a free ephemeral port is
     /// probed and the bind retried a few times — the probe socket must
