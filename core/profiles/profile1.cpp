@@ -218,6 +218,9 @@ bool ObjectDirectory::handle(const SessionEvent& event) {
             }
             const Outstanding request = it->second;
             outstanding_.erase(it);
+            // Whatever this answer queues is stamped with the request it answers.
+            const std::size_t eventsBefore = events_.size();
+            const std::size_t pagesBefore = pages_.size();
             switch (request.kind) {
                 case RequestKind::Object:
                     if (event.message.type() == codec::MessageType::MosObj) {
@@ -246,6 +249,13 @@ bool ObjectDirectory::handle(const SessionEvent& event) {
                 case RequestKind::Query:
                     completeQuery(event, request);
                     break;
+            }
+            for (std::size_t i = eventsBefore; i < events_.size(); ++i) {
+                events_[i].channel = event.channel;
+                events_[i].seq = event.seq;
+            }
+            for (std::size_t i = pagesBefore; i < pages_.size(); ++i) {
+                pages_[i].seq = event.seq;
             }
             return true;
         }

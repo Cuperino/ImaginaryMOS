@@ -632,6 +632,44 @@ TEST(Profile3, CreateNackLeavesNoPhantomEntry) {
     EXPECT_EQ(fx.ncs->objectIDs().size(), 0U);
 }
 
+// 10b. Several creates in flight: an ack names the new objID, not the
+//      request, so each resolution carries the channel and Seq its call
+//      returned and a host can match placeholders to answers.
+TEST(Profile3, CreateResolutionsCarryTheirRequestSeq) {
+    TwoRoleFixture fx;
+    AdvancedObjectSource source;
+    fx.device->attach(source);
+    fx.connectAll();
+
+    const auto first = fx.ncs->createObject(makeMosObjCreate("Hotel Fire", "VIDEO", "59.94"));
+    const auto refused = fx.ncs->createObject(makeMosObjCreate("refuse", "VIDEO", "59.94"));
+    const auto second = fx.ncs->createObject(makeMosObjCreate("Mice in City", "VIDEO", "59.94"));
+    ASSERT_TRUE(first.ok() && refused.ok() && second.ok());
+    fx.settle();
+
+    const std::vector<DirectoryEvent> events = drainDirectory(*fx.ncs);
+    std::map<imos::Seq, const DirectoryEvent*> answers;
+    for (const DirectoryEvent& event : events) {
+        if (event.type == DirectoryEventType::ObjectCreated ||
+            event.type == DirectoryEventType::RequestFailed) {
+            EXPECT_EQ(event.channel, Channel::Mom);
+            answers[event.seq] = &event;
+        } else if (event.type == DirectoryEventType::ObjectUpdated) {
+            EXPECT_EQ(event.seq, 0U);  // the device's own push answers nothing
+        }
+    }
+    ASSERT_EQ(answers.size(), 3U);
+    ASSERT_TRUE(answers.contains(first.value()) && answers.contains(refused.value()) &&
+                answers.contains(second.value()));
+    EXPECT_EQ(answers[first.value()]->type, DirectoryEventType::ObjectCreated);
+    EXPECT_EQ(answers[refused.value()]->type, DirectoryEventType::RequestFailed);
+    EXPECT_EQ(answers[second.value()]->type, DirectoryEventType::ObjectCreated);
+    EXPECT_EQ(fx.ncs->object(answers[first.value()]->objID)->body()->childText("objSlug"),
+              "Hotel Fire");
+    EXPECT_EQ(fx.ncs->object(answers[second.value()]->objID)->body()->childText("objSlug"),
+              "Mice in City");
+}
+
 // 11. A source without the Profile 3 overrides NACKs creates outright.
 TEST(Profile3, PlainSourceNacksCreate) {
     TwoRoleFixture fx;
@@ -749,11 +787,13 @@ TEST(Profile3, SearchFlowIngestsPage) {
     group.fields.push_back(ObjectQueryField{parseXPathOrDie("/Presenter [. ='Bob']"), -1, false});
     query.groups = {group};
 
-    ASSERT_TRUE(fx.ncs->queryObjects(query).ok());
+    const auto sent = fx.ncs->queryObjects(query);
+    ASSERT_TRUE(sent.ok());
     fx.settle();
 
     std::optional<DirectoryQueryPage> page = fx.ncs->nextQueryPage();
     ASSERT_TRUE(page.has_value());
+    EXPECT_EQ(page->seq, sent.value());
     EXPECT_EQ(page->queryID, "search-1");
     EXPECT_EQ(page->listReturnTotal, 2U);
     EXPECT_EQ(page->objIDs, (std::vector<std::string>{"A", "C"}));

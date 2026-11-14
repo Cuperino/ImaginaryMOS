@@ -205,11 +205,20 @@ struct DirectoryEvent {
     DirectoryEventType type = DirectoryEventType::ObjectUpdated;
     std::string objID;
     std::string statusDescription;  ///< verbose reason on RequestFailed
+    /// When the event answers one of our requests (RequestFailed,
+    /// SyncAcknowledged, ObjectCreated, ActionCompleted, SchemasListed, or the
+    /// ObjectUpdated of a mosReqObj hit): the channel and Seq that request's
+    /// call returned, so a host with several requests in flight can tell
+    /// which one this answers (a create's ack names no objID it was asked
+    /// for). seq 0 for unsolicited pushes.
+    Channel channel = Channel::Mom;
+    Seq seq = 0;
 };
 
 /// One mosObjList page as the directory ingested it: the paging metadata
 /// plus the objIDs whose mosObjs were folded into the mirror.
 struct DirectoryQueryPage {
+    Seq seq = 0;  ///< what query() returned for the request this page answers (aux)
     std::string queryID;
     std::size_t listReturnStart = 0;
     std::size_t listReturnEnd = 0;
