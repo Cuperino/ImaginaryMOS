@@ -59,6 +59,7 @@ struct Ws3Endpoint::Impl {
     EndpointConfig config;
     ILogger* logger = nullptr;
     Ws3ErrorHandler errorHandler;
+    ActivityHandler activity;  ///< set before start(); read on worker threads
 
     std::unique_ptr<ix::HttpServer> server;
     int boundPort = 0;
@@ -86,8 +87,13 @@ struct Ws3Endpoint::Impl {
     }
 
     void postEvent(QueuedEvent event) {
-        const std::scoped_lock lock{eventMutex};
-        events.push_back(std::move(event));
+        {
+            const std::scoped_lock lock{eventMutex};
+            events.push_back(std::move(event));
+        }
+        if (activity) {
+            activity();
+        }
     }
 
     void postDiagnostic(Channel channel, std::string text) {
@@ -368,6 +374,10 @@ void Ws3Endpoint::pump(PeerSession& session) {
 
 void Ws3Endpoint::setErrorHandler(Ws3ErrorHandler handler) {
     impl_->errorHandler = std::move(handler);
+}
+
+void Ws3Endpoint::setActivityHandler(ActivityHandler handler) {
+    impl_->activity = std::move(handler);
 }
 
 void Ws3Endpoint::setPeerServiceUrl(std::string url) {

@@ -69,6 +69,7 @@ struct Tcp28Endpoint::Impl {
     IRandom* random = nullptr;
     ILogger* logger = nullptr;
     Tcp28ErrorHandler errorHandler;
+    ActivityHandler activity;  ///< set before start(); read on worker threads
 
     /// Everything the I/O thread owns for one channel. Only the atomics are
     /// read from other threads.
@@ -144,8 +145,13 @@ struct Tcp28Endpoint::Impl {
     }
 
     void postEvent(QueuedEvent event) {
-        const std::scoped_lock lock{eventMutex};
-        events.push_back(std::move(event));
+        {
+            const std::scoped_lock lock{eventMutex};
+            events.push_back(std::move(event));
+        }
+        if (activity) {
+            activity();
+        }
     }
 
     void postCommand(Command command) {
@@ -771,6 +777,10 @@ void Tcp28Endpoint::pump(PeerSession& session) {
 
 void Tcp28Endpoint::setErrorHandler(Tcp28ErrorHandler handler) {
     impl_->errorHandler = std::move(handler);
+}
+
+void Tcp28Endpoint::setActivityHandler(ActivityHandler handler) {
+    impl_->activity = std::move(handler);
 }
 
 std::optional<int> Tcp28Endpoint::listenPort(Channel channel) const {

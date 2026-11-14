@@ -64,6 +64,10 @@ public:
     void pump(PeerSession& session);
 
     void setErrorHandler(TransportErrorHandler handler);
+    /// Wake-up hook: called on the browser's main thread from the WebSocket
+    /// callbacks whenever pump() has something new to drain. Install before
+    /// start(); see <imos/transports/activity.h> for the contract.
+    void setActivityHandler(ActivityHandler handler);
     [[nodiscard]] std::optional<MonotonicTime> nextDeadline() const;
 
 private:

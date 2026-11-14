@@ -36,6 +36,8 @@
 #include <imos/transports/tcp28.h>
 #include <incs/ncs.h>
 
+#include "../support/activity_waiter.h"
+
 #if !defined(_WIN32)
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -173,6 +175,7 @@ struct Rig {
     bool startNcs = true;                          ///< false: the device endpoint stands alone
     Topology ncsTopology = Topology::FourSockets;  ///< the NCS's socket scheme
     bool deviceAcceptOnlyPeerHost = true;
+    imos::transports::ActivityHandler activity;  ///< installed on both endpoints when set
     std::unique_ptr<Tcp28Endpoint> deviceEndpoint;
     std::unique_ptr<Tcp28Endpoint> ncsEndpoint;
     std::unique_ptr<PeerSession> deviceSession;
@@ -229,6 +232,9 @@ struct Rig {
             ncsEndpoint->setErrorHandler([this](Channel channel, const std::string& diagnostic) {
                 ncsDiagnostics.emplace_back(channel, diagnostic);
             });
+            if (activity) {
+                ncsEndpoint->setActivityHandler(activity);
+            }
             ncsSession = std::make_unique<PeerSession>(
                 sessionConfig(), PeerSession::Dependencies{&clock, ncsEndpoint.get(), &ncsStore});
             if (withResponders) {
@@ -251,6 +257,9 @@ struct Rig {
         deviceEndpoint->setErrorHandler([this](Channel channel, const std::string& diagnostic) {
             deviceDiagnostics.emplace_back(channel, diagnostic);
         });
+        if (activity) {
+            deviceEndpoint->setActivityHandler(activity);
+        }
         deviceSession = std::make_unique<PeerSession>(
             sessionConfig(), PeerSession::Dependencies{&clock, deviceEndpoint.get(), &deviceStore});
         if (withResponders) {
@@ -345,6 +354,29 @@ TEST(Tcp28Transport, ClassicPortSchemeProfile0BothRoles) {
     ASSERT_TRUE(rig.ncsSession->enqueue(Channel::Ro, makeMessage(MessageType::ReqMachInfo)).ok());
     ASSERT_TRUE(
         rig.waitFor([&] { return findAck(rig.ncsEvents, MessageType::ListMachInfo) != nullptr; }));
+
+    rig.deviceEndpoint->stop();
+    rig.ncsEndpoint->stop();
+}
+
+// The activity hook wakes a host that does not poll: once the link is up (a
+// redial is a deadline, not activity, so set-up may poll), a request each way
+// and its answer are delivered with the host sleeping on the hook alone.
+TEST(Tcp28Transport, ActivityHookWakesAHostThatNeverPolls) {
+    imos::test::ActivityWaiter waiter;
+    Rig rig;
+    rig.activity = waiter.handler();
+    rig.start();
+    ASSERT_TRUE(rig.waitForLink());
+    const auto pump = [&] { rig.pumpOnce(); };
+
+    ASSERT_TRUE(
+        rig.deviceSession->enqueue(Channel::Mom, makeMessage(MessageType::ReqMachInfo)).ok());
+    ASSERT_TRUE(waiter.drive(
+        pump, [&] { return findAck(rig.deviceEvents, MessageType::ListMachInfo) != nullptr; }));
+    ASSERT_TRUE(rig.ncsSession->enqueue(Channel::Ro, makeMessage(MessageType::ReqMachInfo)).ok());
+    ASSERT_TRUE(waiter.drive(
+        pump, [&] { return findAck(rig.ncsEvents, MessageType::ListMachInfo) != nullptr; }));
 
     rig.deviceEndpoint->stop();
     rig.ncsEndpoint->stop();

@@ -40,6 +40,7 @@
 #include <imos/session/reconnect.h>
 #include <imos/session/runtime.h>
 #include <imos/session/transport.h>
+#include <imos/transports/activity.h>
 #include <imos/transports_export.h>
 
 namespace imos::transports::tcp28 {
@@ -149,6 +150,10 @@ public:
     void pump(PeerSession& session);
 
     void setErrorHandler(Tcp28ErrorHandler handler);
+    /// Wake-up hook: called on a transport thread whenever pump() has
+    /// something new to drain. Install before start(); see
+    /// <imos/transports/activity.h> for the contract.
+    void setActivityHandler(ActivityHandler handler);
 
     /// The bound port of a listening channel (resolves ephemeral requests
     /// after start()); nullopt for channels this endpoint does not listen

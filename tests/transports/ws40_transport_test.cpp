@@ -34,6 +34,8 @@
 #include <imos/transports/ws40.h>
 #include <incs/ncs.h>
 
+#include "../support/activity_waiter.h"
+
 using imos::Channel;
 using imos::ITransport;
 using imos::MonotonicTime;
@@ -120,6 +122,8 @@ struct Rig {
     std::vector<std::string> clientProtocolErrors;
 
     int port = 0;
+    /// Installed on the server and the client before they start, when set.
+    imos::transports::ActivityHandler activity;
 
     void startServer(WireEncoding peerEncoding = WireEncoding::Ucs2Be,
                      imos::transports::ws40::ICredentialVerifier* credentials = nullptr) {
@@ -128,6 +132,9 @@ struct Rig {
         config.port = port;  // 0 on first start → ephemeral; restarts rebind
         config.credentials = credentials;
         server = std::make_unique<Ws40Server>(config);
+        if (activity) {
+            server->setActivityHandler(activity);
+        }
         ServerPeerConfig peer;
         peer.mosID = kMosID;
         peer.ncsID = kNcsID;
@@ -160,6 +167,9 @@ struct Rig {
         client->setErrorHandler([this](Channel, const std::string& diagnostic) {
             clientProtocolErrors.push_back(diagnostic);
         });
+        if (activity) {
+            client->setActivityHandler(activity);
+        }
         deviceSession = std::make_unique<PeerSession>(
             sessionConfig(encoding), PeerSession::Dependencies{&clock, client.get(), &deviceStore});
         deviceResponder = std::make_unique<Profile0Responder>(machineInfo(DeviceType::Mos),
@@ -754,6 +764,31 @@ TEST(Ws40Transport, PassiveTopologyServerOriginatesAndClientReconnects) {
     ASSERT_TRUE(rig.ncsSession->enqueue(Channel::Ro, makeReqMachInfo()).ok());
     ASSERT_TRUE(
         rig.waitFor([&] { return findAck(rig.ncsEvents, MessageType::ListMachInfo) != nullptr; }));
+}
+
+// The activity hook lets a host sleep until there is something to pump. This
+// host never polls: connect, an NCS-originated request and the device's
+// answer, the listener dropping, and the reconnect are each woken by the
+// client's or the server's hook alone.
+TEST(Ws40Transport, ActivityHookWakesAHostThatNeverPolls) {
+    imos::test::ActivityWaiter waiter;
+    Rig rig;
+    rig.activity = waiter.handler();
+    rig.startServer();
+    rig.startClient({Channel::Mom, Channel::Ro}, /*passive=*/true);
+    const auto pump = [&] { rig.pumpOnce(); };
+    ASSERT_TRUE(waiter.drive(pump, [&] {
+        return rig.client->isConnected(Channel::Ro) &&
+               rig.server->transportFor(kMosID, kNcsID).isConnected(Channel::Ro);
+    }));
+
+    ASSERT_TRUE(rig.ncsSession->enqueue(Channel::Ro, makeReqMachInfo()).ok());
+    ASSERT_TRUE(waiter.drive(
+        pump, [&] { return findAck(rig.ncsEvents, MessageType::ListMachInfo) != nullptr; }));
+
+    rig.server->stop();
+    ASSERT_TRUE(waiter.drive(pump, [&] { return !rig.client->isConnected(Channel::Ro); }));
+    EXPECT_GT(waiter.count(), 0U);
 }
 
 // ---- Profile 1 object workflow over the real WebSocket transport ----------

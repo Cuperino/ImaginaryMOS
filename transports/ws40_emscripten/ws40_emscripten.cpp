@@ -38,6 +38,7 @@ struct Ws40EmscriptenClient::Impl {
     IClock* clock = nullptr;
     ILogger* logger = nullptr;
     TransportErrorHandler errorHandler;
+    ActivityHandler activity;
 
     struct ChannelSlot {
         Impl* owner = nullptr;  // for the C callback trampolines
@@ -105,6 +106,13 @@ struct Ws40EmscriptenClient::Impl {
         slot.downReported = true;
         slot.open = false;
         queue.push_back({QueuedEvent::Kind::Disconnected, slot.channel, {}, false});
+        notifyActivity();
+    }
+
+    void notifyActivity() const {
+        if (activity) {
+            activity();
+        }
     }
 
     static EM_BOOL onOpen(int /*eventType*/, const EmscriptenWebSocketOpenEvent* /*event*/,
@@ -113,6 +121,7 @@ struct Ws40EmscriptenClient::Impl {
         slot->open = true;
         slot->downReported = false;
         slot->owner->queue.push_back({QueuedEvent::Kind::Connected, slot->channel, {}, false});
+        slot->owner->notifyActivity();
         return EM_TRUE;
     }
 
@@ -145,6 +154,7 @@ struct Ws40EmscriptenClient::Impl {
         }
         queued.payload.assign(event->data, event->data + length);
         slot->owner->queue.push_back(std::move(queued));
+        slot->owner->notifyActivity();
         return EM_TRUE;
     }
 
@@ -321,6 +331,10 @@ void Ws40EmscriptenClient::pump(PeerSession& session) {
 
 void Ws40EmscriptenClient::setErrorHandler(TransportErrorHandler handler) {
     impl_->errorHandler = std::move(handler);
+}
+
+void Ws40EmscriptenClient::setActivityHandler(ActivityHandler handler) {
+    impl_->activity = std::move(handler);
 }
 
 std::optional<MonotonicTime> Ws40EmscriptenClient::nextDeadline() const {

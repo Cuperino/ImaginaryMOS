@@ -92,7 +92,8 @@ replace on first matching `mosSchema`), shared by the model and
 diff-reverts it, acking on ro and surfacing `nextItemReplace()`);
 `store/` has the file-backed `IMessageStore`; `transports/`
 has the real 4.0 WebSocket client+server over IXWebSocket (`ws40_ixws`:
-auth, TLS surface, deflate, host-pumped threading, and both spec
+auth, TLS surface, deflate, host-pumped threading with an optional
+activity wake-up hook (`transports/activity.h`, on every transport), and both spec
 topologies kept strictly apart: passive — one side dials with
 `passive=true`, and only then does `Ws40Server` originate on that accepted
 connection; standard — both sides listen and dial, composed per peer by

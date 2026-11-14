@@ -153,6 +153,13 @@ struct Ws40Server::Impl {
     mutable std::mutex mutex;  // guards peers map, claims, and the queue
     std::map<std::string, Peer> peers;
     std::deque<ServerEvent> queue;
+    ActivityHandler activity;  ///< set before start(); read on IX threads
+
+    void notifyActivity() const {
+        if (activity) {
+            activity();
+        }
+    }
 
     void log(LogLevel level, const std::string& text) {
         if (logger != nullptr) {
@@ -161,8 +168,11 @@ struct Ws40Server::Impl {
     }
 
     void enqueue(ServerEvent event) {
-        const std::scoped_lock lock{mutex};
-        queue.push_back(std::move(event));
+        {
+            const std::scoped_lock lock{mutex};
+            queue.push_back(std::move(event));
+        }
+        notifyActivity();
     }
 
     void reject(ix::WebSocket& socket, std::uint16_t code, const std::string& reason) {
@@ -252,28 +262,32 @@ struct Ws40Server::Impl {
             reject(*socket, rejectCode, rejectReason);
             return std::nullopt;
         }
+        notifyActivity();  // ChannelConnected was queued under the lock
         return claim;
     }
 
     void releaseClaim(const Claim& claim, const std::shared_ptr<ix::WebSocket>& socket) {
-        const std::scoped_lock lock{mutex};
-        const auto it = peers.find(claim.peerKey);
-        if (it == peers.end()) {
-            return;
+        {
+            const std::scoped_lock lock{mutex};
+            const auto it = peers.find(claim.peerKey);
+            if (it == peers.end()) {
+                return;
+            }
+            std::weak_ptr<ix::WebSocket>& slot =
+                it->second.claims[static_cast<std::size_t>(claim.channel)];
+            if (slot.lock() != socket) {
+                return;  // another connection took the slot over; not ours to drop
+            }
+            slot.reset();
+            it->second.passive[static_cast<std::size_t>(claim.channel)] = false;
+            ServerEvent event;
+            event.kind = ServerEvent::Kind::ChannelDisconnected;
+            event.mosID = claim.mosID;
+            event.ncsID = claim.ncsID;
+            event.channel = claim.channel;
+            queue.push_back(std::move(event));
         }
-        std::weak_ptr<ix::WebSocket>& slot =
-            it->second.claims[static_cast<std::size_t>(claim.channel)];
-        if (slot.lock() != socket) {
-            return;  // another connection took the slot over; not ours to drop
-        }
-        slot.reset();
-        it->second.passive[static_cast<std::size_t>(claim.channel)] = false;
-        ServerEvent event;
-        event.kind = ServerEvent::Kind::ChannelDisconnected;
-        event.mosID = claim.mosID;
-        event.ncsID = claim.ncsID;
-        event.channel = claim.channel;
-        queue.push_back(std::move(event));
+        notifyActivity();
     }
 
     void onFrame(const Claim& claim, const std::string& payload, bool binary) {
@@ -469,6 +483,10 @@ std::optional<ServerEvent> Ws40Server::nextEvent() {
     ServerEvent event = std::move(impl_->queue.front());
     impl_->queue.pop_front();
     return event;
+}
+
+void Ws40Server::setActivityHandler(ActivityHandler handler) {
+    impl_->activity = std::move(handler);
 }
 
 }  // namespace imos::transports::ws40

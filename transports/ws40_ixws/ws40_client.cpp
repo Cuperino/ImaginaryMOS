@@ -33,6 +33,7 @@ struct Ws40Client::Impl {
     IClock* clock = nullptr;
     ILogger* logger = nullptr;
     TransportErrorHandler errorHandler;
+    ActivityHandler activity;  ///< set before start(); read on IX threads
 
     struct ChannelSlot {
         bool wanted = false;
@@ -63,8 +64,13 @@ struct Ws40Client::Impl {
     }
 
     void enqueue(QueuedEvent event) {
-        const std::scoped_lock lock{queueMutex};
-        queue.push_back(std::move(event));
+        {
+            const std::scoped_lock lock{queueMutex};
+            queue.push_back(std::move(event));
+        }
+        if (activity) {
+            activity();
+        }
     }
 
     std::string channelUrl(Channel channel) const {
@@ -288,6 +294,10 @@ void Ws40Client::pump(const ChannelEventSink& sink) {
 
 void Ws40Client::setErrorHandler(TransportErrorHandler handler) {
     impl_->errorHandler = std::move(handler);
+}
+
+void Ws40Client::setActivityHandler(ActivityHandler handler) {
+    impl_->activity = std::move(handler);
 }
 
 std::optional<MonotonicTime> Ws40Client::nextDeadline() const {

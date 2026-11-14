@@ -51,6 +51,7 @@
 #include <imos/session/reconnect.h>
 #include <imos/session/runtime.h>
 #include <imos/session/transport.h>
+#include <imos/transports/activity.h>
 #include <imos/transports_export.h>
 #include <imos/ws40/basic_auth.h>
 
@@ -183,6 +184,10 @@ public:
     void pump(const ChannelEventSink& sink);
 
     void setErrorHandler(TransportErrorHandler handler);
+    /// Wake-up hook: called on a transport thread whenever pump() has
+    /// something new to drain. Install before start(); see
+    /// <imos/transports/activity.h> for the contract.
+    void setActivityHandler(ActivityHandler handler);
 
     /// Earliest instant pump() has scheduled work (reconnect attempts),
     /// for host scheduling alongside PeerSession::nextDeadline().
@@ -280,6 +285,11 @@ public:
     /// ChannelConnected / ChannelDisconnected into the matching peer's
     /// PeerSession (onFrameReceived / onChannelConnected / …).
     [[nodiscard]] std::optional<ServerEvent> nextEvent();
+
+    /// Wake-up hook: called on a server thread whenever nextEvent() has
+    /// something new. Install before start(); see
+    /// <imos/transports/activity.h> for the contract.
+    void setActivityHandler(ActivityHandler handler);
 
 private:
     struct Impl;

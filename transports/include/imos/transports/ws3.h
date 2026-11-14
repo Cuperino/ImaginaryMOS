@@ -34,6 +34,7 @@
 #include <imos/protocol.h>
 #include <imos/session/peer_session.h>
 #include <imos/session/transport.h>
+#include <imos/transports/activity.h>
 #include <imos/transports_export.h>
 #include <imos/ws40/basic_auth.h>
 
@@ -89,6 +90,10 @@ public:
     void pump(PeerSession& session);
 
     void setErrorHandler(Ws3ErrorHandler handler);
+    /// Wake-up hook: called on a transport thread whenever pump() has
+    /// something new to drain. Install before start(); see
+    /// <imos/transports/activity.h> for the contract.
+    void setActivityHandler(ActivityHandler handler);
 
     /// Re-point the peer service URL (config.peerServiceUrl). Two endpoints
     /// binding ephemeral ports cannot know each other's URLs up front —

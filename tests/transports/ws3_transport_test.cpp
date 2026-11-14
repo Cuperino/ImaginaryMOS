@@ -37,6 +37,8 @@
 #include <imos/transports/ws3_transform.h>
 #include <incs/ncs.h>
 
+#include "../support/activity_waiter.h"
+
 using imos::Channel;
 using imos::MonotonicTime;
 using imos::PeerSession;
@@ -348,6 +350,7 @@ struct Rig {
     std::vector<SessionEvent> ncsEvents;
     std::vector<std::pair<Channel, std::string>> deviceDiagnostics;
     std::vector<std::pair<Channel, std::string>> ncsDiagnostics;
+    imos::transports::ActivityHandler activity;  ///< installed on both endpoints when set
 
     void start(bool withResponders = true) {
         EndpointConfig deviceConfig;
@@ -363,6 +366,10 @@ struct Rig {
         ncsEndpoint->setErrorHandler([this](Channel channel, const std::string& diagnostic) {
             ncsDiagnostics.emplace_back(channel, diagnostic);
         });
+        if (activity) {
+            deviceEndpoint->setActivityHandler(activity);
+            ncsEndpoint->setActivityHandler(activity);
+        }
         ASSERT_TRUE(deviceEndpoint->start().ok());
         ASSERT_TRUE(ncsEndpoint->start().ok());
         deviceEndpoint->setPeerServiceUrl(
@@ -550,6 +557,27 @@ TEST(Ws3Transport, Profile0BothRolesOverLoopbackHttp) {
     ASSERT_TRUE(rig.ncsSession->enqueue(Channel::Ro, makeMessage(MessageType::ReqMachInfo)).ok());
     ASSERT_TRUE(
         rig.waitFor([&] { return findAck(rig.ncsEvents, MessageType::ListMachInfo) != nullptr; }));
+
+    rig.stop();
+}
+
+// The activity hook wakes a host that does not poll: a request each way and
+// its answer (an HTTP call, a parked exchange, the synthesized reply) are
+// delivered with the host sleeping on the hook alone.
+TEST(Ws3Transport, ActivityHookWakesAHostThatNeverPolls) {
+    imos::test::ActivityWaiter waiter;
+    Rig rig;
+    rig.activity = waiter.handler();
+    rig.start();
+    const auto pump = [&] { rig.pumpOnce(); };
+
+    ASSERT_TRUE(
+        rig.deviceSession->enqueue(Channel::Mom, makeMessage(MessageType::ReqMachInfo)).ok());
+    ASSERT_TRUE(waiter.drive(
+        pump, [&] { return findAck(rig.deviceEvents, MessageType::ListMachInfo) != nullptr; }));
+    ASSERT_TRUE(rig.ncsSession->enqueue(Channel::Ro, makeMessage(MessageType::ReqMachInfo)).ok());
+    ASSERT_TRUE(waiter.drive(
+        pump, [&] { return findAck(rig.ncsEvents, MessageType::ListMachInfo) != nullptr; }));
 
     rig.stop();
 }
