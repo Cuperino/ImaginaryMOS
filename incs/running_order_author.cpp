@@ -695,6 +695,22 @@ Result<void> RunningOrderAuthor::forgetDeviceState(std::string_view roID) {
     return {};  // never sent: the next commit creates it whole anyway
 }
 
+Result<void> RunningOrderAuthor::assumeDeviceHolds(std::string_view roID) {
+    const std::string id{roID};
+    if (id.empty()) {
+        return imos::makeError(imos::ErrorCode::InvalidArgument, "empty roID");
+    }
+    if (storySendLinked_.contains(id)) {
+        return imos::makeError(imos::ErrorCode::WrongState,
+                               "'" + id +
+                                   "' is story-send-linked: a replace would discard the device's "
+                                   "scripts");
+    }
+    DeviceRo& dev = device_[id];
+    dev.valid = false;  // whatever it holds, the next commit replaces or deletes it
+    return {};
+}
+
 Result<std::vector<imos::Seq>> RunningOrderAuthor::commitAll() {
     std::set<std::string> ids;
     for (const std::string& id : desired_.runningOrderIDs()) {

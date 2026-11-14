@@ -706,6 +706,37 @@ TEST(Profile2, ForgettingTheDeviceStateResendsTheWholeRunningOrder) {
     EXPECT_FALSE(author.forgetDeviceState("RO1").ok());  // would drop the scripts
 }
 
+// A host whose author restarted while the device kept its ROs: assuming the
+// device holds an RO turns the next commit into roReplace when it is wanted
+// and roDelete when it is not - never a roCreate the device would refuse.
+TEST(Profile2, AssumingTheDeviceHoldsAnRoReplacesOrDeletesIt) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    {
+        RunningOrderAuthor& first = fx.ncs->author();
+        ASSERT_TRUE(first.create("KEEP", "Kept").ok());
+        ASSERT_TRUE(first.insertStory("KEEP", RunningOrderAuthor::makeStory("old", "Old")).ok());
+        ASSERT_TRUE(first.create("DROP", "Dropped").ok());
+        ASSERT_TRUE(first.commitAll().ok());
+        fx.settle();
+        ASSERT_TRUE(fx.device->runningOrderModel().has("KEEP"));
+        ASSERT_TRUE(fx.device->runningOrderModel().has("DROP"));
+        (void)drainCommits(*fx.ncs);
+    }
+    // A fresh author over the same session, as after a host restart.
+    RunningOrderAuthor fresh(&fx.ncs->session());
+    ASSERT_TRUE(fresh.assumeDeviceHolds("KEEP").ok());
+    ASSERT_TRUE(fresh.assumeDeviceHolds("DROP").ok());
+    ASSERT_TRUE(fresh.create("KEEP", "Kept").ok());
+    ASSERT_TRUE(fresh.insertStory("KEEP", RunningOrderAuthor::makeStory("new", "New")).ok());
+    ASSERT_TRUE(fresh.commit("KEEP").ok());
+    ASSERT_TRUE(fresh.commit("DROP").ok());
+    fx.settle();
+    EXPECT_EQ(fx.device->runningOrderModel().storyIDs("KEEP"), std::vector<std::string>{"new"});
+    EXPECT_FALSE(fx.device->runningOrderModel().has("DROP"));
+    EXPECT_FALSE(fresh.assumeDeviceHolds("").ok());
+}
+
 // ---- raw-sink mode: the host owns RO state (plan §4.6 opt-out) ----------
 //
 // Every construction message routes to the host's IRunningOrderSink, its

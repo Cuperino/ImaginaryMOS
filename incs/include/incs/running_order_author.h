@@ -197,6 +197,13 @@ public:
     /// every script (plan §1.3); resync those through roStorySend instead.
     imos::Result<void> forgetDeviceState(std::string_view roID);
 
+    /// Tell a fresh author that the device holds `roID` already, in an
+    /// unknown state - for a host whose author restarted while the device
+    /// kept its running orders. The next commit() then sends roReplace if
+    /// the RO is wanted (never a roCreate the device would refuse), or
+    /// roDelete if it is not. Story-send-linked ROs are refused, as above.
+    imos::Result<void> assumeDeviceHolds(std::string_view roID);
+
     /// Consume one session event; returns true when it resolved a committed
     /// message (queues a CommitEvent) or ingested a device-originated
     /// mosItemReplace (Profile 3: merged into the desired state *and* the
