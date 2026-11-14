@@ -189,6 +189,14 @@ public:
     /// commit() for every RO the author or the device knows.
     imos::Result<std::vector<imos::Seq>> commitAll();
 
+    /// Treat what the device holds for `roID` as unknown, as a NACK would:
+    /// the next commit() sends the complete RO (roReplace, or roCreate if the
+    /// device was never sent it) instead of a diff. For an operator's
+    /// "resync" when the device's copy is suspect but it has not said so.
+    /// Story-send-linked ROs are refused: a replace makes a prompter discard
+    /// every script (plan §1.3); resync those through roStorySend instead.
+    imos::Result<void> forgetDeviceState(std::string_view roID);
+
     /// Consume one session event; returns true when it resolved a committed
     /// message (queues a CommitEvent) or ingested a device-originated
     /// mosItemReplace (Profile 3: merged into the desired state *and* the

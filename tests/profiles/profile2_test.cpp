@@ -674,6 +674,38 @@ TEST(Profile2, NackElementStatusesReachTheCommitResult) {
     EXPECT_EQ(commits[0].statuses[1].status, "UNKNOWN");
 }
 
+// An operator's resync: forgetting the device's state turns the next commit
+// into a whole roReplace, which repairs a device copy that drifted.
+TEST(Profile2, ForgettingTheDeviceStateResendsTheWholeRunningOrder) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    RunningOrderAuthor& author = fx.ncs->author();
+    ASSERT_TRUE(author.create("RO1", "Evening").ok());
+    ASSERT_TRUE(author.insertStory("RO1", RunningOrderAuthor::makeStory("s1", "One")).ok());
+    ASSERT_TRUE(author.commit("RO1").ok());
+    fx.settle();
+    ASSERT_TRUE(fx.device->runningOrderModel().has("RO1"));
+    (void)drainCommits(*fx.ncs);
+
+    // Nothing changed: a commit sends nothing.
+    EXPECT_TRUE(author.commit("RO1").value().empty());
+    // Forgotten: the same commit sends the whole RO again.
+    ASSERT_TRUE(author.forgetDeviceState("RO1").ok());
+    const auto seqs = author.commit("RO1");
+    ASSERT_TRUE(seqs.ok());
+    EXPECT_EQ(seqs.value().size(), 1U);
+    fx.settle();
+    const std::vector<incs::CommitEvent> commits = drainCommits(*fx.ncs);
+    ASSERT_EQ(commits.size(), 1U);
+    EXPECT_TRUE(commits[0].ok);
+    EXPECT_EQ(fx.device->runningOrderModel().storyIDs("RO1"), std::vector<std::string>{"s1"});
+    EXPECT_TRUE(author.commit("RO1").value().empty());  // in step again
+
+    EXPECT_FALSE(author.forgetDeviceState("nope").ok());
+    author.setStorySendLinked("RO1", true);
+    EXPECT_FALSE(author.forgetDeviceState("RO1").ok());  // would drop the scripts
+}
+
 // ---- raw-sink mode: the host owns RO state (plan §4.6 opt-out) ----------
 //
 // Every construction message routes to the host's IRunningOrderSink, its

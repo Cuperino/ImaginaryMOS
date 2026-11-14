@@ -677,6 +677,24 @@ Result<std::vector<imos::Seq>> RunningOrderAuthor::commit(std::string_view roID)
     return seqs;
 }
 
+Result<void> RunningOrderAuthor::forgetDeviceState(std::string_view roID) {
+    const std::string id{roID};
+    if (storySendLinked_.contains(id)) {
+        return imos::makeError(imos::ErrorCode::WrongState,
+                               "'" + id +
+                                   "' is story-send-linked: a replace would discard the "
+                                   "device's scripts");
+    }
+    if (const auto dev = device_.find(id); dev != device_.end()) {
+        dev->second.valid = false;
+        return {};
+    }
+    if (desired_.runningOrder(id) == nullptr) {
+        return imos::makeError(imos::ErrorCode::NotFound, "unknown roID '" + id + "'");
+    }
+    return {};  // never sent: the next commit creates it whole anyway
+}
+
 Result<std::vector<imos::Seq>> RunningOrderAuthor::commitAll() {
     std::set<std::string> ids;
     for (const std::string& id : desired_.runningOrderIDs()) {
