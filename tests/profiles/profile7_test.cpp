@@ -516,6 +516,143 @@ TEST(Profile7, LeaseBlocksConflictingRequestUntilExpiry) {
         << "the lease holder was locked out of its own lease";
 }
 
+// The host's gate (IStoryActionGate): an NCS whose running orders belong to
+// a newsroom system decides what a device may do. A refused request is
+// NACKed with the gate's reason, takes no lease and changes nothing; the
+// audit carries the whole request either way, so the host can follow up.
+namespace {
+
+class RecordingGate : public incs::IStoryActionGate {
+public:
+    std::string refuseStory;         ///< refuse requests naming this story
+    std::vector<std::string> names;  ///< IDs to hand out, in order
+    std::vector<std::string> asked;  ///< "<mosID> <roID>/<storyID>" per authorize()
+
+    imos::Result<void> authorize(const StoryActionRequest& request,
+                                 std::string_view mosID) override {
+        asked.push_back(std::string{mosID} + " " + request.roID + "/" + request.storyID);
+        if (!refuseStory.empty() && request.storyID == refuseStory) {
+            return imos::makeError(imos::ErrorCode::WrongState, "story is locked by ana");
+        }
+        return {};
+    }
+    std::string assignStoryID(std::string_view) override {
+        if (names.empty()) {
+            return {};
+        }
+        std::string name = names.front();
+        names.erase(names.begin());
+        return name;
+    }
+};
+
+}  // namespace
+
+TEST(Profile7Gate, ARefusedRequestIsNackedTakesNoLeaseAndChangesNothing) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    convergePlainRo(fx, "RO1", 2);
+    SingleHolderLeasePolicy policy;
+    fx.ncs->setLeasePolicy(&policy);
+    RecordingGate gate;
+    gate.refuseStory = "s1";
+    fx.ncs->setStoryActionGate(&gate);
+
+    StoryActionRequest req{};
+    req.operation = StoryAction::Update;
+    req.roID = "RO1";
+    req.storyID = "s1";
+    req.storySlug = "Changed";
+    req.leaseSeconds = 30;
+    req.username = "jsmith";
+    req.storyBody = makeStoryBody("<p>New words.</p>");
+    ASSERT_TRUE(fx.device->requestStoryAction(req).ok());
+    fx.settle();
+
+    const imos::profiles::StoryActionResult result = nextResult(fx);
+    EXPECT_FALSE(result.ok);
+    EXPECT_NE(result.roStatus.find("locked by ana"), std::string::npos) << result.roStatus;
+    EXPECT_EQ(fx.ncs->author().desired().story("RO1", "s1")->childText("storySlug"), "slug");
+    ASSERT_EQ(gate.asked.size(), 1U);
+    EXPECT_EQ(gate.asked[0], std::string{TwoRoleFixture::kMosID} + " RO1/s1");
+    // No lease was taken for the refused request: anyone may have the story.
+    EXPECT_TRUE(policy.acquire("RO1", "s1", "other.device.mos", 5, fx.clock.now()).ok());
+    policy.release("RO1", "s1", "other.device.mos");
+
+    const std::optional<incs::StoryActionAudit> audit = fx.ncs->nextStoryActionAudit();
+    ASSERT_TRUE(audit.has_value());
+    EXPECT_FALSE(audit->accepted);
+    EXPECT_EQ(audit->mosID, TwoRoleFixture::kMosID);
+    EXPECT_EQ(audit->request.storySlug, "Changed");
+
+    // The story it does not refuse goes through, and the audit carries what
+    // the device asked for: the host needs the script, not only the fact.
+    req.storyID = "s2";
+    ASSERT_TRUE(fx.device->requestStoryAction(req).ok());
+    fx.settle();
+    EXPECT_TRUE(nextResult(fx).ok);
+    const std::optional<incs::StoryActionAudit> accepted = fx.ncs->nextStoryActionAudit();
+    ASSERT_TRUE(accepted.has_value());
+    EXPECT_TRUE(accepted->accepted);
+    EXPECT_EQ(accepted->username, "jsmith");
+    EXPECT_EQ(accepted->request.leaseSeconds, std::optional<int>(30));
+    ASSERT_TRUE(accepted->request.storyBody.has_value());
+    EXPECT_EQ(accepted->request.storyBody->firstChildElement("p")->text(), "New words.");
+
+    // Without a gate everything is applied, as before.
+    fx.ncs->setStoryActionGate(nullptr);
+    req.storyID = "s1";
+    ASSERT_TRUE(fx.device->requestStoryAction(req).ok());
+    fx.settle();
+    EXPECT_TRUE(nextResult(fx).ok);
+    EXPECT_EQ(gate.asked.size(), 2U);
+}
+
+TEST(Profile7Gate, TheHostNamesNewStoriesAndTheAuditListsThem) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    convergePlainRo(fx, "RO1", 1);
+    RecordingGate gate;
+    gate.names = {"host-7"};
+    fx.ncs->setStoryActionGate(&gate);
+
+    StoryActionRequest req{};
+    req.operation = StoryAction::New;
+    req.roID = "RO1";
+    req.beforeStoryID = "s1";
+    req.story = RunningOrderAuthor::makeStory("", "Auto", "A1");
+    ASSERT_TRUE(fx.device->requestStoryAction(req).ok());
+    fx.settle();
+    imos::profiles::StoryActionResult result = nextResult(fx);
+    ASSERT_TRUE(result.ok) << result.roStatus;
+    EXPECT_EQ(result.assignedStoryID, "host-7");
+    EXPECT_EQ(fx.ncs->author().desired().storyIDs("RO1"),
+              (std::vector<std::string>{"host-7", "s1"}));
+    std::optional<incs::StoryActionAudit> audit = fx.ncs->nextStoryActionAudit();
+    ASSERT_TRUE(audit.has_value());
+    EXPECT_EQ(audit->assignedStoryIDs, (std::vector<std::string>{"host-7"}));
+    ASSERT_EQ(audit->stories.size(), 1U);
+    EXPECT_EQ(audit->stories[0].childText("storySlug"), "Auto");
+    EXPECT_EQ(audit->request.beforeStoryID, "s1");
+
+    // A host with no name to give leaves it to the responder; a name it
+    // gives that is taken refuses the request rather than overwrite a story.
+    ASSERT_TRUE(fx.device->requestStoryAction(req).ok());
+    fx.settle();
+    result = nextResult(fx);
+    ASSERT_TRUE(result.ok) << result.roStatus;
+    EXPECT_EQ(result.assignedStoryID.rfind("P7-", 0), 0U) << result.assignedStoryID;
+    (void)fx.ncs->nextStoryActionAudit();
+    gate.names = {"s1"};
+    ASSERT_TRUE(fx.device->requestStoryAction(req).ok());
+    fx.settle();
+    EXPECT_FALSE(nextResult(fx).ok);
+    audit = fx.ncs->nextStoryActionAudit();
+    ASSERT_TRUE(audit.has_value());
+    EXPECT_FALSE(audit->accepted);
+    EXPECT_TRUE(audit->assignedStoryIDs.empty());
+}
+
 // 9. The default lease policy in isolation: single holder, TTL from
 //    durationSeconds, same-holder renewal, expiry, and release.
 TEST(Profile7Lease, SingleHolderGrantConflictExpiryRelease) {

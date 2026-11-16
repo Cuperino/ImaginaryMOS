@@ -17,7 +17,9 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
+#include <imos/codec/xml.h>
 #include <imos/error.h>
 #include <imos/profiles/profile0.h>
 #include <imos/profiles/profile7.h>
@@ -63,11 +65,38 @@ private:
     std::map<std::pair<std::string, std::string>, LeaseEntry> leases_;  // {roID, storyID} → entry
 };
 
-/// One resolved roReqStoryAction, for simulator/audit assertions.
+/// The host's say over story actions, for an NCS whose running orders are
+/// owned by something other than the authoring store (a newsroom system
+/// with its own model, users and locks). Optional: without one every
+/// well-formed request is applied, as before.
+class IMOS_INCS_API IStoryActionGate {
+public:
+    virtual ~IStoryActionGate() = default;
+    /// Asked once per well-formed request, before any lease is taken and
+    /// before anything is changed. `mosID` is the requesting device. An
+    /// error refuses the request: its message is the NACK's detail.
+    virtual imos::Result<void> authorize(const imos::profiles::StoryActionRequest& request,
+                                         std::string_view mosID) = 0;
+    /// The storyID for a NEW story the device sent without one. Empty (the
+    /// default) leaves it to the responder ("P7-<n>").
+    virtual std::string assignStoryID(std::string_view roID) {
+        (void)roID;
+        return {};
+    }
+};
+
+/// One resolved roReqStoryAction, for the host to follow up and for
+/// simulator/audit assertions. `request` is the request as parsed (for a
+/// NEW, `request.story` is the first story and `stories` holds them all);
+/// `assignedStoryIDs` are the IDs of an accepted NEW's stories, in order.
 struct StoryActionAudit {
     std::string roID, storyID, username, detail;
     imos::profiles::StoryAction operation;
     bool accepted = false;
+    std::string mosID;  ///< the requesting device
+    imos::profiles::StoryActionRequest request;
+    std::vector<imos::codec::XmlNode> stories;
+    std::vector<std::string> assignedStoryIDs;
 };
 
 /// NCS-side Profile 7 authority. Parses roReqStoryAction, checks the P7
@@ -89,6 +118,10 @@ public:
     /// holds a pointer; the host is responsible for lifetime management.
     void setLeasePolicy(ILeasePolicy* policy) noexcept { leases_ = policy; }
 
+    /// Let the host refuse requests and name new stories (default: none).
+    /// The responder holds a pointer; the host manages its lifetime.
+    void setGate(IStoryActionGate* gate) noexcept { gate_ = gate; }
+
     /// Consume one session event: inbound MessageReceived roReqStoryAction.
     bool handle(const imos::SessionEvent& event);
 
@@ -100,7 +133,8 @@ private:
     /// inserted"), in order, before the request's target; returns the first
     /// story's ID — the one the roAck carries in roStatus.
     imos::Result<std::string> applyNew(const imos::profiles::StoryActionRequest& req,
-                                       const std::vector<imos::codec::XmlNode>& stories);
+                                       const std::vector<imos::codec::XmlNode>& stories,
+                                       std::vector<std::string>* assigned);
     imos::Result<void> applyUpdate(const imos::profiles::StoryActionRequest& req);
     imos::Result<void> applyDelete(const imos::profiles::StoryActionRequest& req);
     imos::Result<void> applyMove(const imos::profiles::StoryActionRequest& req);
@@ -111,6 +145,7 @@ private:
 
     RunningOrderAuthor* author_;
     ILeasePolicy* leases_;
+    IStoryActionGate* gate_ = nullptr;
     const imos::profiles::Profile0Responder* peer0_;
     imos::PeerSession* session_;
     imos::IClock* clock_;

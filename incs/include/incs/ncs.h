@@ -175,6 +175,9 @@ public:
 
     /// Set the lease policy for roReqStoryAction handling (default: single-holder TTL).
     void setLeasePolicy(ILeasePolicy* policy) noexcept;
+    /// Let the host refuse story actions and name new stories (see
+    /// IStoryActionGate). Null removes it.
+    void setStoryActionGate(IStoryActionGate* gate) noexcept;
     /// Capability gating for roReqStoryAction: Strict NACKs peers that never
     /// advertised Profile 7 in listMachInfo; Lenient (default) accepts and
     /// records an audit entry regardless (§4.1 strict/lenient duality).

@@ -216,6 +216,7 @@ bool Profile7NcsResponder::handle(const imos::SessionEvent& event) {
     }
 
     // Records one resolved action in the audit trail (accepted iff no reason).
+    std::vector<std::string> assignedStoryIDs;
     const auto recordAudit = [&](std::string_view storyID, std::string_view reason) {
         StoryActionAudit audit;
         audit.roID = req.roID;
@@ -224,8 +225,24 @@ bool Profile7NcsResponder::handle(const imos::SessionEvent& event) {
         audit.operation = action;
         audit.accepted = reason.empty();
         audit.detail = std::string{reason};
+        audit.mosID = holder;
+        audit.request = req;
+        audit.stories = newStories;
+        if (audit.accepted) {
+            audit.assignedStoryIDs = assignedStoryIDs;
+        }
         audits_.push_back(std::move(audit));
     };
+
+    // The host's say comes first: a request it refuses takes no lease and
+    // changes nothing.
+    if (gate_ != nullptr) {
+        if (imos::Result<void> allowed = gate_->authorize(req, holder); !allowed.ok()) {
+            sendNack(req.roID, allowed.error().message);
+            recordAudit(req.storyID, allowed.error().message);
+            return true;
+        }
+    }
 
     // Try to acquire lease if requested
     if (leaseRequested) {
@@ -249,7 +266,8 @@ bool Profile7NcsResponder::handle(const imos::SessionEvent& event) {
     std::string assignedStoryID;
     switch (action) {
         case imos::profiles::StoryAction::New: {
-            if (imos::Result<std::string> result = applyNew(req, newStories); result.ok()) {
+            if (imos::Result<std::string> result = applyNew(req, newStories, &assignedStoryIDs);
+                result.ok()) {
                 assignedStoryID = std::move(result).value();
             } else {
                 nackReason = result.error().message;
@@ -300,8 +318,8 @@ bool Profile7NcsResponder::handle(const imos::SessionEvent& event) {
 }
 
 imos::Result<std::string> Profile7NcsResponder::applyNew(
-    const imos::profiles::StoryActionRequest& req,
-    const std::vector<imos::codec::XmlNode>& stories) {
+    const imos::profiles::StoryActionRequest& req, const std::vector<imos::codec::XmlNode>& stories,
+    std::vector<std::string>* assigned) {
     if (stories.empty()) {
         return imos::makeError(imos::ErrorCode::InvalidArgument,
                                "NEW missing story in element_source");
@@ -314,9 +332,20 @@ imos::Result<std::string> Profile7NcsResponder::applyNew(
     for (const imos::codec::XmlNode& story : stories) {
         std::string storyID = story.childText("storyID");
         if (storyID.empty()) {
-            do {
-                storyID = nextGeneratedStoryID(req.roID);
-            } while (std::find(ids.begin(), ids.end(), storyID) != ids.end());
+            // The host names it if it wants to; a name it gives that is
+            // already taken is treated like one the device sent.
+            if (gate_ != nullptr) {
+                storyID = gate_->assignStoryID(req.roID);
+            }
+            if (storyID.empty()) {
+                do {
+                    storyID = nextGeneratedStoryID(req.roID);
+                } while (std::find(ids.begin(), ids.end(), storyID) != ids.end());
+            } else if (std::find(ids.begin(), ids.end(), storyID) != ids.end() ||
+                       author_->desired().story(req.roID, storyID) != nullptr) {
+                return imos::makeError(imos::ErrorCode::InvalidArgument,
+                                       "storyID '" + storyID + "' already exists");
+            }
         } else if (std::find(ids.begin(), ids.end(), storyID) != ids.end() ||
                    author_->desired().story(req.roID, storyID) != nullptr) {
             return imos::makeError(imos::ErrorCode::InvalidArgument,
@@ -354,6 +383,9 @@ imos::Result<std::string> Profile7NcsResponder::applyNew(
     }
     if (imos::Result<std::vector<imos::Seq>> result = author_->commit(req.roID); !result.ok()) {
         return std::move(result).error();
+    }
+    if (assigned != nullptr) {
+        *assigned = ids;
     }
     return ids.front();
 }

@@ -235,6 +235,10 @@ void Ncs::setLeasePolicy(ILeasePolicy* policy) noexcept {
     }
 }
 
+void Ncs::setStoryActionGate(IStoryActionGate* gate) noexcept {
+    profile7_.setGate(gate);
+}
+
 void Ncs::setStoryActionCapabilityPolicy(Profile7NcsResponder::CapabilityPolicy policy) noexcept {
     profile7_.setCapabilityPolicy(policy);
 }
