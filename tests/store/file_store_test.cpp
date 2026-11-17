@@ -126,8 +126,11 @@ TEST_F(FileStoreTest, TheReplyFlagSurvivesARestart) {
         FileMessageStore store{options()};
         auto handle = store.open("peer", Channel::Ro);
         ASSERT_TRUE(handle.ok());
-        OutboundRecord request = record("20", "<mos>request</mos>");
-        OutboundRecord reply = record("21", "<mos>reply</mos>");
+        // The records point into these, which must outlive them.
+        const std::string requestPayload = "<mos>request</mos>";
+        const std::string replyPayload = "<mos>reply</mos>";
+        OutboundRecord request = record("20", requestPayload);
+        OutboundRecord reply = record("21", replyPayload);
         reply.flags = imos::kOutboundReplyFlag;
         ASSERT_TRUE(store.append(handle.value(), request).ok());
         ASSERT_TRUE(store.append(handle.value(), reply).ok());

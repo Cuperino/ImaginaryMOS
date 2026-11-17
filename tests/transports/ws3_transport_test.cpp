@@ -992,8 +992,8 @@ TEST(Ws3Transport, ADeviceThatRestartsMidBacklogResyncs) {
     for (const auto& [channel, text] : rig.deviceDiagnostics) {
         diagnostics += "device: " + text + "\n";
     }
-    EXPECT_TRUE(converged) << "pending " << rig.ncs->author().pendingCount() << "\n"
-                           << diagnostics;
+    diagnostics += "pending " + std::to_string(rig.ncs->author().pendingCount());
+    EXPECT_TRUE(converged) << diagnostics;
     rig.stop();
 }
 
