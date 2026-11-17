@@ -318,6 +318,39 @@ Result<void> RunningOrderAuthor::setHeaderField(std::string_view roID, std::stri
     return applyEdit(message);
 }
 
+Result<void> RunningOrderAuthor::setHeaderMetadata(std::string_view roID, const XmlNode& metadata) {
+    if (!metadata.isElement("mosExternalMetadata")) {
+        return imos::makeError(imos::ErrorCode::InvalidArgument,
+                               "not a <mosExternalMetadata> subtree");
+    }
+    const XmlNode* ro = desired_.runningOrder(roID);
+    if (ro == nullptr) {
+        return imos::makeError(imos::ErrorCode::NotFound,
+                               "unknown roID '" + std::string{roID} + "'");
+    }
+    const std::string schema = metadata.childText("mosSchema");
+    Message message = imos::codec::makeMessage(MessageType::RoMetadataReplace);
+    if (XmlNode* body = message.body()) {
+        bool replaced = false;
+        for (const XmlNode& child : ro->children) {
+            if (child.isElement("story")) {
+                continue;
+            }
+            if (!replaced && child.isElement("mosExternalMetadata") &&
+                child.childText("mosSchema") == schema) {
+                body->children.push_back(metadata);
+                replaced = true;
+            } else {
+                body->children.push_back(child);
+            }
+        }
+        if (!replaced) {
+            body->children.push_back(metadata);  // the header's last element
+        }
+    }
+    return applyEdit(message);
+}
+
 Result<void> RunningOrderAuthor::setReadyToAir(std::string_view roID, std::string_view roAir) {
     Message message = imos::codec::makeMessage(MessageType::RoReadyToAir);
     if (XmlNode* body = message.body()) {

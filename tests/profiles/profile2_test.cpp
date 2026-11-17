@@ -245,6 +245,58 @@ TEST(Profile2, DiffProducesMinimalSpecSequences) {
     singleMessage(MessageType::RoReplace, "");
 }
 
+// Header external metadata: what the NCS knows about a running order that
+// MOS has no field for rides in a <mosExternalMetadata> block, replaced by
+// schema and delivered as a header-only roMetadataReplace.
+TEST(RunningOrderAuthorHeader, MetadataIsSetBySchemaAndReachesTheDevice) {
+    TwoRoleFixture fx;
+    fx.connectAll();
+    ASSERT_TRUE(fx.ncs->author().create("RO1", "Evening").ok());
+    ASSERT_TRUE(fx.ncs->author().insertStory("RO1", RunningOrderAuthor::makeStory("s1")).ok());
+    ASSERT_TRUE(fx.ncs->author().commit("RO1").ok());
+    fx.settle();
+
+    const auto block = [](const std::string& schema, const std::string& value) {
+        auto parsed = imos::codec::parseXmlDocument(
+            "<mosExternalMetadata><mosScope>PLAYLIST</mosScope><mosSchema>" + schema +
+            "</mosSchema><mosPayload><folder>" + value +
+            "</folder></mosPayload>"
+            "</mosExternalMetadata>");
+        EXPECT_TRUE(parsed.ok());
+        return parsed.value().root;
+    };
+    const auto folders = [&](const imos::codec::XmlNode* ro) {
+        std::vector<std::string> values;
+        for (const imos::codec::XmlNode& child : ro->children) {
+            if (child.isElement("mosExternalMetadata")) {
+                values.push_back(child.childText("mosSchema") + "=" +
+                                 child.firstChildElement("mosPayload")->childText("folder"));
+            }
+        }
+        return values;
+    };
+
+    EXPECT_FALSE(fx.ncs->author().setHeaderMetadata("nowhere", block("urn:a", "x")).ok());
+    EXPECT_FALSE(
+        fx.ncs->author().setHeaderMetadata("RO1", RunningOrderAuthor::makeStory("s")).ok());
+    ASSERT_TRUE(fx.ncs->author().setHeaderMetadata("RO1", block("urn:a", "News")).ok());
+    ASSERT_TRUE(fx.ncs->author().setHeaderMetadata("RO1", block("urn:b", "Other")).ok());
+    ASSERT_TRUE(fx.ncs->author().setHeaderMetadata("RO1", block("urn:a", "News/Late")).ok());
+    const auto seqs = fx.ncs->author().commit("RO1");
+    ASSERT_TRUE(seqs.ok());
+    EXPECT_EQ(seqs.value().size(), 1U);  // one roMetadataReplace
+    fx.settle();
+
+    const std::vector<std::string> expected{"urn:a=News/Late", "urn:b=Other"};
+    EXPECT_EQ(folders(fx.ncs->author().desired().runningOrder("RO1")), expected);
+    EXPECT_EQ(folders(fx.device->runningOrderModel().runningOrder("RO1")), expected);
+    // The stories are untouched, and the block is the last header element.
+    EXPECT_EQ(fx.device->runningOrderModel().storyIDs("RO1"), (std::vector<std::string>{"s1"}));
+    // Unchanged: nothing to send.
+    ASSERT_TRUE(fx.ncs->author().setHeaderMetadata("RO1", block("urn:a", "News/Late")).ok());
+    EXPECT_TRUE(fx.ncs->author().commit("RO1").value().empty());
+}
+
 // 4. roReadyToAir propagates the readiness flag.
 TEST(Profile2, ReadyToAirReachesTheModel) {
     TwoRoleFixture fx;

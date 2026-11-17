@@ -97,6 +97,12 @@ public:
     /// its content-model position. Never a story — use the story edits.
     imos::Result<void> setHeaderField(std::string_view roID, std::string_view field,
                                       std::string_view value);
+    /// Set one header <mosExternalMetadata> block: it replaces the header's
+    /// block with the same <mosSchema>, or is added after the others. For
+    /// what an NCS knows about a running order that MOS has no field for.
+    /// Carried verbatim, like any external metadata.
+    imos::Result<void> setHeaderMetadata(std::string_view roID,
+                                         const imos::codec::XmlNode& metadata);
     /// Request roReadyToAir with this <roAir> value ("READY" / "NOT READY").
     imos::Result<void> setReadyToAir(std::string_view roID, std::string_view roAir);
 
