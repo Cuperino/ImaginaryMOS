@@ -119,6 +119,28 @@ TEST_F(FileStoreTest, AppendPendingAckSurviveRestart) {
     EXPECT_GT(s4.value(), firstSeq + 2);
 }
 
+// Whether a record is a reply (kOutboundReplyFlag) survives a restart, so a
+// resuming session can tell its requests from the last session's answers.
+TEST_F(FileStoreTest, TheReplyFlagSurvivesARestart) {
+    {
+        FileMessageStore store{options()};
+        auto handle = store.open("peer", Channel::Ro);
+        ASSERT_TRUE(handle.ok());
+        OutboundRecord request = record("20", "<mos>request</mos>");
+        OutboundRecord reply = record("21", "<mos>reply</mos>");
+        reply.flags = imos::kOutboundReplyFlag;
+        ASSERT_TRUE(store.append(handle.value(), request).ok());
+        ASSERT_TRUE(store.append(handle.value(), reply).ok());
+    }
+    FileMessageStore store{options()};
+    auto handle = store.open("peer", Channel::Ro);
+    ASSERT_TRUE(handle.ok());
+    const auto pending = drain(store, handle.value());
+    ASSERT_EQ(pending.size(), 2U);
+    EXPECT_EQ(pending[0].flags, 0U);
+    EXPECT_EQ(pending[1].flags, imos::kOutboundReplyFlag);
+}
+
 TEST_F(FileStoreTest, TornFinalRecordIsTruncatedAndEarlierRecordsSurvive) {
     {
         FileMessageStore store{options()};

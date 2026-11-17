@@ -142,6 +142,16 @@ void PeerSession::loadPersistedQueue(Channel channel) {
         return;
     }
     while (std::optional<PendingRecord> record = cursor.value().next()) {
+        if ((record->flags & kOutboundReplyFlag) != 0) {
+            // It answered a request of an earlier session's: that exchange
+            // is gone, and the peer asks again. Sent now it would be a reply
+            // to nothing - and a transport that carries replies only as the
+            // answer to a call (MOS 3.x) could not send it at all.
+            logMessage(LogLevel::Debug,
+                       "dropping a persisted reply to messageID " + record->messageId);
+            (void)deps_.store->markAcked(ch.stream, record->seq);
+            continue;
+        }
         PendingSend send;
         send.seq = record->seq;
         send.messageId = std::move(record->messageId);
@@ -311,6 +321,7 @@ Result<Seq> PeerSession::enqueueInternal(Channel channel, codec::Message message
             reinterpret_cast<const std::uint8_t*>(send.payloadUtf8.data()),
             send.payloadUtf8.size()};
         record.enqueuedAt = Timestamp{deps_.clock->wallClock().millisSinceEpoch};
+        record.flags = send.isReply ? kOutboundReplyFlag : 0U;
         Result<Seq> appended = deps_.store->append(ch.stream, record);
         if (appended.ok()) {
             send.seq = appended.value();

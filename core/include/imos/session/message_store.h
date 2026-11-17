@@ -40,6 +40,13 @@ struct StreamHandle {
     std::uint64_t id = 0;
 };
 
+/// OutboundRecord::flags: the record answers a request of the peer's (an
+/// ack, a roList). It is durable only until sent, and only within the
+/// session that made it: the exchange it answered does not outlive that
+/// session, so a session that resumes from the store drops it - the peer
+/// asks again. A store keeps this bit with the record.
+inline constexpr std::uint32_t kOutboundReplyFlag = 1U << 0;
+
 /// One outbound message as handed to the store, durable before send.
 struct OutboundRecord {
     MessageIdView messageId;

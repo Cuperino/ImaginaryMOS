@@ -45,6 +45,8 @@ constexpr std::uint8_t kKindOutbound = 1;
 constexpr std::uint8_t kKindAck = 2;
 constexpr std::uint8_t kKindInboundNote = 3;
 constexpr std::uint8_t kFlagDeflate = 0x01;
+/// The record's kOutboundReplyFlag, kept in the record header's flag byte.
+constexpr std::uint8_t kFlagReply = 0x02;
 constexpr std::size_t kFixedHeaderAfterLen = 28;  // version..rawPayloadLen
 constexpr std::size_t kCrcBytes = 4;
 
@@ -167,6 +169,7 @@ std::string sanitizePeerId(const PeerId& peer) {
 
 struct ParsedRecord {
     std::uint8_t kind = 0;
+    std::uint8_t flags = 0;
     Seq seq = 0;
     std::int64_t timestampMs = 0;
     std::string messageId;
@@ -272,6 +275,7 @@ std::size_t recoverJournal(const std::filesystem::path& path, std::size_t maxRec
         const std::uint16_t version = get16(p);
         record.kind = p[2];
         const std::uint8_t flags = p[3];
+        record.flags = flags;
         record.seq = get64(p + 4);
         record.timestampMs = static_cast<std::int64_t>(get64(p + 12));
         const std::uint32_t messageIdLen = get32(p + 20);
@@ -353,6 +357,7 @@ Result<StreamHandle> FileMessageStore::open(const PeerId& peer, Channel channel)
                 pending.messageId = r.messageId;
                 pending.payload = r.payload;
                 pending.enqueuedAt = Timestamp{r.timestampMs};
+                pending.flags = (r.flags & kFlagReply) != 0 ? kOutboundReplyFlag : 0U;
                 journal->live.emplace(r.seq, std::move(pending));
                 journal->nextSeq = std::max(journal->nextSeq, r.seq + 1);
             } else if (r.kind == kKindAck) {
@@ -379,6 +384,9 @@ Result<Seq> FileMessageStore::append(StreamHandle stream, const OutboundRecord& 
     std::uint8_t flags = 0;
     const std::vector<std::uint8_t> stored =
         encodePayload(record.payload, options_.compressThresholdBytes, flags);
+    if ((record.flags & kOutboundReplyFlag) != 0) {
+        flags |= kFlagReply;
+    }
     const std::vector<std::uint8_t> bytes =
         buildRecord(kKindOutbound, flags, seq, record.enqueuedAt.millisSinceEpoch, record.messageId,
                     stored, static_cast<std::uint32_t>(record.payload.size()));
@@ -462,6 +470,9 @@ Result<void> FileMessageStore::compact(StreamHandle stream) {
             const std::vector<std::uint8_t> stored = encodePayload(
                 std::span<const std::uint8_t>{record.payload.data(), record.payload.size()},
                 options_.compressThresholdBytes, flags);
+            if ((record.flags & kOutboundReplyFlag) != 0) {
+                flags |= kFlagReply;
+            }
             const std::vector<std::uint8_t> bytes = buildRecord(
                 kKindOutbound, flags, seq, record.enqueuedAt.millisSinceEpoch, record.messageId,
                 stored, static_cast<std::uint32_t>(record.payload.size()));

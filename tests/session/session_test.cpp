@@ -393,6 +393,34 @@ TEST(PeerSession, StoreDrivenResumeAfterRestart) {
     EXPECT_EQ(resumed.body()->firstChildElement("objID")->text(), "M9");
 }
 
+// A reply waiting to go when the session ends is not resumed by the next:
+// the exchange it answered is gone, and the peer asks again. (A reply sent as
+// a request of the new session could not even be carried by MOS 3.x, where a
+// reply is only ever the answer to a call - and would block the queue.)
+TEST(PeerSession, AResumedSessionDropsTheRepliesOfTheLast) {
+    FakeClock clock;
+    imos::InMemoryMessageStore store;
+    {
+        FakeTransport offline;
+        PeerSession first{testConfig(), PeerSession::Dependencies{&clock, &offline, &store, nullptr,
+                                                                  nullptr, nullptr}};
+        Message ack = makeMessage(MessageType::MosAck);
+        ack.setMessageID("77");
+        ASSERT_TRUE(first.enqueueOrderedReply(Channel::Mom, std::move(ack)).ok());
+        ASSERT_TRUE(first.enqueue(makeMosObj("M9")).ok());
+    }
+
+    FakeTransport transport;
+    PeerSession second{testConfig(), PeerSession::Dependencies{&clock, &transport, &store, nullptr,
+                                                               nullptr, nullptr}};
+    transport.connected[0] = true;
+    second.onChannelConnected(Channel::Mom);
+
+    const auto& frames = transport.sent[static_cast<std::size_t>(Channel::Mom)];
+    ASSERT_EQ(frames.size(), 1U);
+    EXPECT_EQ(parseFrame(frames[0]).type(), MessageType::MosObj);  // the ack is gone
+}
+
 TEST(PeerSession, LegacyInboundIsNormalizedWithDiagnostic) {
     Harness h;
     h.connectAll();
