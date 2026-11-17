@@ -60,6 +60,17 @@ struct EndpointConfig {
     bool acceptGzipResponses = true;
     int requestTimeoutSecs = 10;           ///< outbound HTTP round trip
     int inboundReplyTimeoutMillis = 5000;  ///< parked-exchange wait
+    /// HTTP has no connection to lose, so reachability is what a call
+    /// finds: one that gets no HTTP answer at all (refused, reset, timed
+    /// out) takes every channel down, and the peer's service is then probed
+    /// this often until anything answers, which brings them back up. Calls
+    /// queued meanwhile wait for that.
+    int reachProbeMillis = 500;
+    /// While the peer is up and nothing is being called, probe it this
+    /// often, so a peer that goes away is noticed without waiting for the
+    /// next message (a heartbeat of the transport's own; 3.x sessions run
+    /// without one). 0: only calls find out.
+    int idleProbeMillis = 5000;
 };
 
 /// Diagnostic sink: HTTP failures, transform rejections, parked-exchange
@@ -75,15 +86,22 @@ public:
     Ws3Endpoint& operator=(const Ws3Endpoint&) = delete;
 
     /// Bind and start the service and the outbound worker. All channels
-    /// report connected once started — HTTP is connectionless, so per-call
-    /// failures surface as diagnostics and ride the session's retry timer.
+    /// report connected once started, and stay so while the peer's service
+    /// answers (EndpointConfig::reachProbeMillis); a call that gets an HTTP
+    /// error still surfaces as a diagnostic and rides the session's retry
+    /// timer.
     Result<void> start();
     void stop();
 
-    // ITransport. `frame` is a classic UTF-8 <mos> document: a reply whose
-    // messageID matches a parked inbound exchange becomes that exchange's
-    // SOAP response; anything else becomes an outbound SOAP call.
+    // ITransport. `frame` is a classic UTF-8 <mos> document. send() makes it
+    // an outbound SOAP call. sendReply() makes it the SOAP response of the
+    // parked inbound exchange with its messageID; with none (the exchange
+    // timed out, or never was) it is dropped with a diagnostic - a reply
+    // cannot open an exchange. Only the session knows which is which: two
+    // peers number their messages independently, so a new message may carry
+    // the ID of a call that is waiting for its answer.
     Result<void> send(Channel channel, std::span<const std::uint8_t> frame) override;
+    Result<void> sendReply(Channel channel, std::span<const std::uint8_t> frame) override;
     [[nodiscard]] bool isConnected(Channel channel) const override;
 
     /// Drain synthesized replies, inbound calls, and diagnostics into the

@@ -29,7 +29,7 @@ namespace {
 constexpr int kEphemeralBindAttempts = 8;
 
 struct QueuedEvent {
-    enum class Kind : std::uint8_t { Frame, Diagnostic };
+    enum class Kind : std::uint8_t { Frame, Diagnostic, Up, Down };
     Kind kind = Kind::Frame;
     Channel channel = Channel::Mom;
     std::string frame;  ///< UTF-8 classic document
@@ -68,6 +68,8 @@ struct Ws3Endpoint::Impl {
     std::mutex eventMutex;
     std::deque<QueuedEvent> events;
     bool connectedAnnounced = false;
+    /// Whether the peer's service answers (EndpointConfig::reachProbeMillis).
+    std::atomic<bool> peerUp{true};
 
     // Outbound worker: one thread performing the blocking HTTP calls.
     std::thread worker;
@@ -100,6 +102,19 @@ struct Ws3Endpoint::Impl {
         postEvent({QueuedEvent::Kind::Diagnostic, channel, {}, std::move(text)});
     }
 
+    void markUp() {
+        if (!peerUp.exchange(true)) {
+            postEvent({QueuedEvent::Kind::Up, Channel::Mom, {}, {}});
+            workCv.notify_one();  // the calls held while it was away
+        }
+    }
+
+    void markDown() {
+        if (peerUp.exchange(false)) {
+            postEvent({QueuedEvent::Kind::Down, Channel::Mom, {}, {}});
+        }
+    }
+
     // ---- server side ----------------------------------------------------
 
     ix::HttpResponsePtr handleRequest(const ix::HttpRequestPtr& request) {
@@ -112,6 +127,7 @@ struct Ws3Endpoint::Impl {
         if (request->method != "POST") {
             return fault(405, "Client", "only POST is supported");
         }
+        markUp();  // the peer is there: it called
         Result<InboundCall> call = parseSoapRequest(request->body);
         if (!call.ok()) {
             postDiagnostic(Channel::Mom, "inbound SOAP rejected: " + call.error().message);
@@ -150,19 +166,62 @@ struct Ws3Endpoint::Impl {
 
     void workerLoop() {
         ix::HttpClient client;
+        const auto probeEvery = std::chrono::milliseconds{std::max(config.reachProbeMillis, 10)};
         while (true) {
             OutboundCall call;
             {
                 std::unique_lock lock{workMutex};
-                workCv.wait(lock, [&] { return workerQuit || !work.empty(); });
-                if (workerQuit && work.empty()) {
+                if (peerUp && config.idleProbeMillis > 0) {
+                    const bool woken =
+                        workCv.wait_for(lock, std::chrono::milliseconds{config.idleProbeMillis},
+                                        [&] { return workerQuit || !work.empty() || !peerUp; });
+                    if (!woken) {  // idle: is it still there?
+                        lock.unlock();
+                        if (!probe(client)) {
+                            markDown();
+                        }
+                        continue;
+                    }
+                } else if (peerUp) {
+                    workCv.wait(lock, [&] { return workerQuit || !work.empty() || !peerUp; });
+                } else {
+                    workCv.wait_for(lock, probeEvery, [&] { return workerQuit || peerUp.load(); });
+                }
+                if (workerQuit && (work.empty() || !peerUp)) {
                     return;
+                }
+                if (!peerUp) {
+                    lock.unlock();
+                    probe(client);
+                    continue;
+                }
+                if (work.empty()) {
+                    continue;
                 }
                 call = std::move(work.front());
                 work.pop_front();
             }
             performCall(client, call);
         }
+    }
+
+    /// Anything the peer's service answers - even an error - says it is there.
+    bool probe(ix::HttpClient& client) {
+        auto args = std::make_shared<ix::HttpRequestArgs>();
+        args->connectTimeout = 1;
+        args->transferTimeout = 2;
+        args->followRedirects = false;
+        std::string url;
+        {
+            const std::scoped_lock lock{workMutex};
+            url = config.peerServiceUrl;
+        }
+        const ix::HttpResponsePtr response = client.get(url, args);
+        if (response != nullptr && response->statusCode > 0) {
+            markUp();
+            return true;
+        }
+        return false;
     }
 
     void performCall(ix::HttpClient& client, const OutboundCall& call) {
@@ -187,6 +246,11 @@ struct Ws3Endpoint::Impl {
             url = config.peerServiceUrl;
         }
         const ix::HttpResponsePtr response = client.post(url, call.request.envelope, args);
+        if (response == nullptr || response->statusCode <= 0) {
+            markDown();  // no answer at all: refused, reset or timed out
+        } else {
+            markUp();
+        }
         if (response == nullptr || response->statusCode != 200) {
             const std::string detail =
                 response == nullptr
@@ -287,10 +351,9 @@ void Ws3Endpoint::stop() {
     impl_->started = false;
 }
 
-Result<void> Ws3Endpoint::send(Channel channel, std::span<const std::uint8_t> frame) {
-    if (!impl_->started) {
-        return makeError(ErrorCode::IoError, "ws3 endpoint is not started");
-    }
+namespace {
+
+Result<codec::Message> parseClassic(std::span<const std::uint8_t> frame) {
     const std::string utf8{reinterpret_cast<const char*>(frame.data()), frame.size()};
     Result<codec::Message> parsed = codec::parseMessage(utf8);
     if (!parsed.ok()) {
@@ -299,10 +362,23 @@ Result<void> Ws3Endpoint::send(Channel channel, std::span<const std::uint8_t> fr
                          "WireEncoding::Utf8): " +
                              parsed.error().message);
     }
+    return parsed;
+}
+
+}  // namespace
+
+Result<void> Ws3Endpoint::sendReply(Channel channel, std::span<const std::uint8_t> frame) {
+    if (!impl_->started) {
+        return makeError(ErrorCode::IoError, "ws3 endpoint is not started");
+    }
+    Result<codec::Message> parsed = parseClassic(frame);
+    if (!parsed.ok()) {
+        return std::move(parsed).error();
+    }
     const codec::Message& message = parsed.value();
 
-    // A reply to a parked inbound exchange? (Correlated by messageID; the
-    // session echoes the request's ID onto acks and terminal replies.)
+    // The answer to a parked inbound exchange, correlated by messageID (the
+    // session echoes the request's ID onto acks and terminal replies).
     const std::string messageId{message.messageID().value_or("")};
     std::shared_ptr<ParkedExchange> exchange;
     {
@@ -313,15 +389,29 @@ Result<void> Ws3Endpoint::send(Channel channel, std::span<const std::uint8_t> fr
             impl_->parked.erase(it);
         }
     }
-    if (exchange != nullptr) {
-        Result<std::string> envelope = buildSoapResponse(message, exchange->operation);
-        if (!envelope.ok()) {
-            exchange->response.set_value(buildSoapFault("Server", envelope.error().message));
-            return makeError(ErrorCode::ProtocolViolation, envelope.error().message);
-        }
-        exchange->response.set_value(std::move(envelope).value());
+    if (exchange == nullptr) {
+        impl_->postDiagnostic(
+            channel, "reply to message " + messageId + " dropped: no call is waiting for it");
         return {};
     }
+    Result<std::string> envelope = buildSoapResponse(message, exchange->operation);
+    if (!envelope.ok()) {
+        exchange->response.set_value(buildSoapFault("Server", envelope.error().message));
+        return makeError(ErrorCode::ProtocolViolation, envelope.error().message);
+    }
+    exchange->response.set_value(std::move(envelope).value());
+    return {};
+}
+
+Result<void> Ws3Endpoint::send(Channel channel, std::span<const std::uint8_t> frame) {
+    if (!impl_->started) {
+        return makeError(ErrorCode::IoError, "ws3 endpoint is not started");
+    }
+    Result<codec::Message> parsed = parseClassic(frame);
+    if (!parsed.ok()) {
+        return std::move(parsed).error();
+    }
+    const codec::Message& message = parsed.value();
 
     // Otherwise it opens an exchange: wrap and queue the HTTP call.
     Result<SoapRequest> request = buildSoapRequest(message);
@@ -337,7 +427,7 @@ Result<void> Ws3Endpoint::send(Channel channel, std::span<const std::uint8_t> fr
 }
 
 bool Ws3Endpoint::isConnected(Channel) const {
-    return impl_->started;
+    return impl_->started && impl_->peerUp;
 }
 
 void Ws3Endpoint::pump(PeerSession& session) {
@@ -353,7 +443,7 @@ void Ws3Endpoint::pump(PeerSession& session) {
 void Ws3Endpoint::pump(const ChannelEventSink& sink) {
     if (impl_->started && !impl_->connectedAnnounced) {
         // HTTP is connectionless: the pipe is "up" as soon as the service
-        // and worker are; per-call failures are diagnostics + retries.
+        // and worker are, until a call finds the peer unreachable.
         impl_->connectedAnnounced = true;
         for (std::size_t i = 0; i < kChannelCount; ++i) {
             if (sink.connected) {
@@ -380,6 +470,16 @@ void Ws3Endpoint::pump(const ChannelEventSink& sink) {
                 impl_->log(LogLevel::Warning, event.diagnostic);
                 if (impl_->errorHandler) {
                     impl_->errorHandler(event.channel, event.diagnostic);
+                }
+                break;
+            case QueuedEvent::Kind::Up:
+            case QueuedEvent::Kind::Down:
+                for (std::size_t i = 0; i < kChannelCount; ++i) {
+                    const auto& notify =
+                        event.kind == QueuedEvent::Kind::Up ? sink.connected : sink.disconnected;
+                    if (notify) {
+                        notify(static_cast<Channel>(i));
+                    }
                 }
                 break;
         }

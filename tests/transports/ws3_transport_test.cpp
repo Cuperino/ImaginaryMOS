@@ -355,11 +355,13 @@ struct Rig {
     /// ChannelEventSink&)), recording what passes through it.
     bool ncsThroughSink = false;
     std::vector<std::string> ncsSinkLog;
+    int idleProbeMillis = 5000;                  ///< both endpoints'
     imos::transports::ActivityHandler activity;  ///< installed on both endpoints when set
 
     void start(bool withResponders = true) {
         EndpointConfig deviceConfig;
         deviceConfig.bindHost = "127.0.0.1";
+        deviceConfig.idleProbeMillis = idleProbeMillis;
         deviceConfig.mosID = kMosID;
         deviceConfig.ncsID = kNcsID;
         deviceEndpoint = std::make_unique<Ws3Endpoint>(deviceConfig);
@@ -529,6 +531,29 @@ struct FacadeRig {
         deviceEndpoint->stop();
         ncsEndpoint->stop();
     }
+
+    /// Power the device off and on: same service port, nothing remembered.
+    void restartDevice() {
+        const int port = deviceEndpoint->port();
+        deviceEndpoint->stop();
+        device.reset();
+        deviceEndpoint.reset();
+        deviceStore = imos::InMemoryMessageStore{};
+        EndpointConfig config;
+        config.bindHost = "127.0.0.1";
+        config.bindPort = port;
+        config.mosID = kMosID;
+        config.ncsID = kNcsID;
+        config.peerServiceUrl = "http://127.0.0.1:" + std::to_string(ncsEndpoint->port()) + "/mos";
+        deviceEndpoint = std::make_unique<Ws3Endpoint>(config);
+        deviceEndpoint->setErrorHandler([this](Channel channel, const std::string& diagnostic) {
+            deviceDiagnostics.emplace_back(channel, diagnostic);
+        });
+        ASSERT_TRUE(deviceEndpoint->start().ok());
+        device = std::make_unique<imos::Device>(
+            imos::DeviceConfig{sessionConfig(), machineInfo(DeviceType::Mos)},
+            PeerSession::Dependencies{&clock, deviceEndpoint.get(), &deviceStore});
+    }
 };
 
 class VectorObjectSource : public imos::profiles::IObjectSource {
@@ -605,6 +630,62 @@ TEST(Ws3Transport, PumpIntoAHostSink) {
     };
     EXPECT_EQ(count("up "), 3);     // HTTP is connectionless: every channel is up at once
     EXPECT_GE(count("frame "), 2);  // the device's call, and the reply to ours
+    rig.stop();
+}
+
+// HTTP has no connection to lose, so a peer that goes away is found by the
+// next call: no answer at all takes the channels down, and probing brings
+// them back up once its service answers again - then what waited goes.
+TEST(Ws3Transport, AnUnreachablePeerIsDownUntilItAnswersAgain) {
+    Rig rig;
+    rig.ncsThroughSink = true;
+    rig.start();
+    ASSERT_TRUE(rig.waitFor([&] { return rig.ncsEndpoint->isConnected(Channel::Mom); }));
+
+    // The device's service goes away.
+    const int devicePort = rig.deviceEndpoint->port();
+    rig.deviceEndpoint->stop();
+    ASSERT_TRUE(rig.ncsSession->enqueue(Channel::Ro, makeMessage(MessageType::ReqMachInfo)).ok());
+    ASSERT_TRUE(rig.waitFor([&] { return !rig.ncsEndpoint->isConnected(Channel::Ro); }));
+    const auto saw = [&](const std::string& entry) {
+        return std::find(rig.ncsSinkLog.begin(), rig.ncsSinkLog.end(), entry) !=
+               rig.ncsSinkLog.end();
+    };
+    EXPECT_TRUE(saw("down ro"));
+
+    // And comes back on the same port: the probe finds it, and the request
+    // the session held is answered.
+    EndpointConfig config;
+    config.bindHost = "127.0.0.1";
+    config.bindPort = devicePort;
+    config.mosID = kMosID;
+    config.ncsID = kNcsID;
+    config.peerServiceUrl = "http://127.0.0.1:" + std::to_string(rig.ncsEndpoint->port()) + "/mos";
+    rig.deviceSession.reset();
+    rig.deviceResponder.reset();
+    rig.deviceEndpoint = std::make_unique<Ws3Endpoint>(config);
+    ASSERT_TRUE(rig.deviceEndpoint->start().ok());
+    rig.deviceSession = std::make_unique<PeerSession>(
+        sessionConfig(),
+        PeerSession::Dependencies{&rig.clock, rig.deviceEndpoint.get(), &rig.deviceStore});
+    rig.deviceResponder = std::make_unique<Profile0Responder>(machineInfo(DeviceType::Mos),
+                                                              rig.deviceSession.get(), &rig.clock);
+    ASSERT_TRUE(rig.waitFor([&] { return rig.ncsEndpoint->isConnected(Channel::Ro); }));
+    EXPECT_TRUE(saw("up ro"));
+    ASSERT_TRUE(rig.waitFor(
+        [&] { return findAck(rig.ncsEvents, MessageType::ListMachInfo) != nullptr; }, 15000));
+    rig.stop();
+}
+
+// An idle link is probed too: a peer that goes away while nothing is being
+// sent is noticed within the idle probe interval.
+TEST(Ws3Transport, AnIdlePeerThatGoesAwayIsNoticed) {
+    Rig rig;
+    rig.idleProbeMillis = 100;
+    rig.start();
+    ASSERT_TRUE(rig.waitFor([&] { return rig.ncsEndpoint->isConnected(Channel::Mom); }));
+    rig.deviceEndpoint->stop();
+    ASSERT_TRUE(rig.waitFor([&] { return !rig.ncsEndpoint->isConnected(Channel::Mom); }, 3000));
     rig.stop();
 }
 
@@ -804,6 +885,115 @@ TEST(Ws3Transport, Profile2RunningOrderWorkflowOverWs3) {
     EXPECT_EQ(statuses.front().status, "PLAY");
     EXPECT_EQ(statuses.front().itemID, "i1");
 
+    rig.stop();
+}
+
+// A device that loses everything (power off and on) is brought back by the
+// next change: it refuses the change for a running order it does not hold,
+// asks for the running order, and is sent it whole - over the SOAP pipe,
+// where the device's roReq is an HTTP call the NCS answers in its response.
+TEST(Ws3Transport, ADeviceThatRestartsEmptyResyncs) {
+    FacadeRig rig;
+    rig.start();
+    ASSERT_TRUE(rig.ncs->author().create("WS3-RO", "SOAP Rundown").ok());
+    for (const char* id : {"s1", "s2", "s3"}) {
+        ASSERT_TRUE(
+            rig.ncs->author().insertStory("WS3-RO", incs::RunningOrderAuthor::makeStory(id)).ok());
+    }
+    ASSERT_TRUE(rig.ncs->author().commit("WS3-RO").ok());
+    ASSERT_TRUE(rig.waitFor([&] {
+        return rig.device->runningOrderModel().storyIDs("WS3-RO") ==
+               std::vector<std::string>{"s1", "s2", "s3"};
+    }));
+
+    rig.restartDevice();
+    ASSERT_TRUE(rig.ncs->author().moveStory("WS3-RO", "s3", "s1").ok());
+    ASSERT_TRUE(rig.ncs->author().commit("WS3-RO").ok());
+    const bool converged = rig.waitFor(
+        [&] {
+            return rig.device->runningOrderModel().storyIDs("WS3-RO") ==
+                   std::vector<std::string>{"s3", "s1", "s2"};
+        },
+        20000);
+    std::string diagnostics;
+    for (const auto& [channel, text] : rig.ncsDiagnostics) {
+        diagnostics += "ncs: " + text + "\n";
+    }
+    for (const auto& [channel, text] : rig.deviceDiagnostics) {
+        diagnostics += "device: " + text + "\n";
+    }
+    EXPECT_TRUE(converged) << diagnostics;
+
+    // Restarted again, the running order is taken off it while it holds
+    // nothing, then given back.
+    rig.restartDevice();
+    ASSERT_TRUE(rig.ncs->author().destroy("WS3-RO").ok());
+    ASSERT_TRUE(rig.ncs->author().commit("WS3-RO").ok());
+    rig.waitFor([] { return false; }, 300);
+    ASSERT_TRUE(rig.ncs->author().create("WS3-RO", "SOAP Rundown").ok());
+    for (const char* id : {"s1", "s2"}) {
+        ASSERT_TRUE(
+            rig.ncs->author().insertStory("WS3-RO", incs::RunningOrderAuthor::makeStory(id)).ok());
+    }
+    ASSERT_TRUE(rig.ncs->author().commit("WS3-RO").ok());
+    const bool back = rig.waitFor(
+        [&] {
+            return rig.device->runningOrderModel().storyIDs("WS3-RO") ==
+                   std::vector<std::string>{"s1", "s2"};
+        },
+        20000);
+    diagnostics.clear();
+    for (const auto& [channel, text] : rig.ncsDiagnostics) {
+        diagnostics += "ncs: " + text + "\n";
+    }
+    for (const auto& [channel, text] : rig.deviceDiagnostics) {
+        diagnostics += "device: " + text + "\n";
+    }
+    EXPECT_TRUE(back) << diagnostics;
+    rig.stop();
+}
+
+// The same with a backlog: commits keep coming while the device restarts,
+// so the NCS has many changes queued for a running order the device no
+// longer holds when it asks for it whole.
+TEST(Ws3Transport, ADeviceThatRestartsMidBacklogResyncs) {
+    FacadeRig rig;
+    rig.start();
+    ASSERT_TRUE(rig.ncs->author().create("WS3-RO", "SOAP Rundown").ok());
+    std::vector<std::string> order;
+    for (int i = 0; i < 6; ++i) {
+        order.push_back("s" + std::to_string(i));
+        ASSERT_TRUE(rig.ncs->author()
+                        .insertStory("WS3-RO", incs::RunningOrderAuthor::makeStory(order.back()))
+                        .ok());
+    }
+    ASSERT_TRUE(rig.ncs->author().commit("WS3-RO").ok());
+    ASSERT_TRUE(
+        rig.waitFor([&] { return rig.device->runningOrderModel().storyIDs("WS3-RO") == order; }));
+
+    const auto churn = [&](int moves) {
+        for (int i = 0; i < moves; ++i) {
+            // Move the last story to the front, one commit each.
+            std::rotate(order.rbegin(), order.rbegin() + 1, order.rend());
+            ASSERT_TRUE(rig.ncs->author().moveStory("WS3-RO", order.front(), order[1]).ok());
+            ASSERT_TRUE(rig.ncs->author().commit("WS3-RO").ok());
+            rig.pumpOnce();
+        }
+    };
+    churn(10);
+    rig.restartDevice();
+    churn(10);
+    const bool converged = rig.waitFor(
+        [&] { return rig.device->runningOrderModel().storyIDs("WS3-RO") == order; }, 30000);
+    std::string diagnostics;
+    for (const auto& [channel, text] : rig.ncsDiagnostics) {
+        diagnostics += "ncs: " + text + "\n";
+    }
+    for (const auto& [channel, text] : rig.deviceDiagnostics) {
+        diagnostics += "device: " + text + "\n";
+    }
+    EXPECT_TRUE(converged) << "pending " << rig.ncs->author().pendingCount() << "\n"
+                           << diagnostics;
     rig.stop();
 }
 
