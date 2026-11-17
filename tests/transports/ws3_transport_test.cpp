@@ -12,6 +12,7 @@
 // P5, P7, and the P3 advanced workflow with search paging and
 // placeholder create).
 
+#include <algorithm>
 #include <chrono>
 #include <fstream>
 #include <functional>
@@ -350,6 +351,10 @@ struct Rig {
     std::vector<SessionEvent> ncsEvents;
     std::vector<std::pair<Channel, std::string>> deviceDiagnostics;
     std::vector<std::pair<Channel, std::string>> ncsDiagnostics;
+    /// Pump the NCS through a sink of the test's (pump(const
+    /// ChannelEventSink&)), recording what passes through it.
+    bool ncsThroughSink = false;
+    std::vector<std::string> ncsSinkLog;
     imos::transports::ActivityHandler activity;  ///< installed on both endpoints when set
 
     void start(bool withResponders = true) {
@@ -397,7 +402,24 @@ struct Rig {
                 deviceEvents.push_back(std::move(*event));
             }
         }
-        ncsEndpoint->pump(*ncsSession);
+        if (ncsThroughSink) {
+            imos::transports::ChannelEventSink sink;
+            sink.connected = [&](Channel channel) {
+                ncsSinkLog.push_back("up " + std::string{channelName(channel)});
+                ncsSession->onChannelConnected(channel);
+            };
+            sink.disconnected = [&](Channel channel) {
+                ncsSinkLog.push_back("down " + std::string{channelName(channel)});
+                ncsSession->onChannelDisconnected(channel);
+            };
+            sink.frame = [&](Channel channel, std::span<const std::uint8_t> frame) {
+                ncsSinkLog.push_back("frame " + std::string{channelName(channel)});
+                ncsSession->onFrameReceived(channel, frame);
+            };
+            ncsEndpoint->pump(sink);
+        } else {
+            ncsEndpoint->pump(*ncsSession);
+        }
         ncsSession->poll();
         while (auto event = ncsSession->nextEvent()) {
             if (ncsResponder == nullptr || !ncsResponder->handle(*event)) {
@@ -558,6 +580,31 @@ TEST(Ws3Transport, Profile0BothRolesOverLoopbackHttp) {
     ASSERT_TRUE(
         rig.waitFor([&] { return findAck(rig.ncsEvents, MessageType::ListMachInfo) != nullptr; }));
 
+    rig.stop();
+}
+
+// A host that pumps into a sink of its own sees the pipe come up and each
+// inbound call and synthesized reply on its way to the session, and the
+// exchanges complete as with pump(PeerSession&).
+TEST(Ws3Transport, PumpIntoAHostSink) {
+    Rig rig;
+    rig.ncsThroughSink = true;
+    rig.start();
+
+    ASSERT_TRUE(
+        rig.deviceSession->enqueue(Channel::Mom, makeMessage(MessageType::ReqMachInfo)).ok());
+    ASSERT_TRUE(rig.waitFor(
+        [&] { return findAck(rig.deviceEvents, MessageType::ListMachInfo) != nullptr; }));
+    ASSERT_TRUE(rig.ncsSession->enqueue(Channel::Ro, makeMessage(MessageType::ReqMachInfo)).ok());
+    ASSERT_TRUE(
+        rig.waitFor([&] { return findAck(rig.ncsEvents, MessageType::ListMachInfo) != nullptr; }));
+
+    const auto count = [&](const std::string& prefix) {
+        return std::count_if(rig.ncsSinkLog.begin(), rig.ncsSinkLog.end(),
+                             [&](const std::string& entry) { return entry.starts_with(prefix); });
+    };
+    EXPECT_EQ(count("up "), 3);     // HTTP is connectionless: every channel is up at once
+    EXPECT_GE(count("frame "), 2);  // the device's call, and the reply to ours
     rig.stop();
 }
 

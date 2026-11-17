@@ -52,6 +52,7 @@
 #include <imos/session/runtime.h>
 #include <imos/session/transport.h>
 #include <imos/transports/activity.h>
+#include <imos/transports/channel_events.h>
 #include <imos/transports_export.h>
 #include <imos/ws40/basic_auth.h>
 
@@ -112,13 +113,8 @@ private:
 using TransportErrorHandler = std::function<void(Channel, const std::string&)>;
 
 /// Where a transport's pump delivers connectivity changes and inbound
-/// frames. PeerSession is the usual destination (the pump(PeerSession&)
-/// overloads); Ws40Endpoint interposes one to merge two transports.
-struct ChannelEventSink {
-    std::function<void(Channel)> connected;
-    std::function<void(Channel)> disconnected;
-    std::function<void(Channel, std::span<const std::uint8_t>)> frame;
-};
+/// frames (<imos/transports/channel_events.h>, shared by every transport).
+using ChannelEventSink = transports::ChannelEventSink;
 
 // ---------------------------------------------------------------- client --
 

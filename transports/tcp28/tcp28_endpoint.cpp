@@ -711,6 +711,16 @@ bool Tcp28Endpoint::isConnected(Channel channel) const {
 }
 
 void Tcp28Endpoint::pump(PeerSession& session) {
+    ChannelEventSink sink;
+    sink.connected = [&session](Channel channel) { session.onChannelConnected(channel); };
+    sink.disconnected = [&session](Channel channel) { session.onChannelDisconnected(channel); };
+    sink.frame = [&session](Channel channel, std::span<const std::uint8_t> frame) {
+        session.onFrameReceived(channel, frame);
+    };
+    pump(sink);
+}
+
+void Tcp28Endpoint::pump(const ChannelEventSink& sink) {
     std::deque<QueuedEvent> local;
     {
         const std::scoped_lock lock{impl_->eventMutex};
@@ -737,7 +747,9 @@ void Tcp28Endpoint::pump(PeerSession& session) {
                 break;
             case QueuedEvent::Kind::Connected:
                 state.sessionConnected = true;
-                session.onChannelConnected(event.channel);
+                if (sink.connected) {
+                    sink.connected(event.channel);
+                }
                 break;
             case QueuedEvent::Kind::Disconnected:
                 if (!event.diagnostic.empty()) {
@@ -746,11 +758,15 @@ void Tcp28Endpoint::pump(PeerSession& session) {
                 }
                 if (state.sessionConnected) {
                     state.sessionConnected = false;
-                    session.onChannelDisconnected(event.channel);
+                    if (sink.disconnected) {
+                        sink.disconnected(event.channel);
+                    }
                 }
                 break;
             case QueuedEvent::Kind::Frame:
-                session.onFrameReceived(event.channel, event.frame);
+                if (sink.frame) {
+                    sink.frame(event.channel, event.frame);
+                }
                 break;
             case QueuedEvent::Kind::Diagnostic:
                 impl_->log(LogLevel::Warning, event.diagnostic);

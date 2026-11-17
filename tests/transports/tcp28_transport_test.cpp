@@ -175,6 +175,10 @@ struct Rig {
     bool startNcs = true;                          ///< false: the device endpoint stands alone
     Topology ncsTopology = Topology::FourSockets;  ///< the NCS's socket scheme
     bool deviceAcceptOnlyPeerHost = true;
+    /// Pump the NCS through a sink of the test's (pump(const
+    /// ChannelEventSink&)), recording what passes through it.
+    bool ncsThroughSink = false;
+    std::vector<std::string> ncsSinkLog;
     imos::transports::ActivityHandler activity;  ///< installed on both endpoints when set
     std::unique_ptr<Tcp28Endpoint> deviceEndpoint;
     std::unique_ptr<Tcp28Endpoint> ncsEndpoint;
@@ -284,7 +288,24 @@ struct Rig {
             }
         }
         if (ncsEndpoint != nullptr && ncsSession != nullptr) {
-            ncsEndpoint->pump(*ncsSession);
+            if (ncsThroughSink) {
+                imos::transports::ChannelEventSink sink;
+                sink.connected = [&](Channel channel) {
+                    ncsSinkLog.push_back("up " + std::string{channelName(channel)});
+                    ncsSession->onChannelConnected(channel);
+                };
+                sink.disconnected = [&](Channel channel) {
+                    ncsSinkLog.push_back("down " + std::string{channelName(channel)});
+                    ncsSession->onChannelDisconnected(channel);
+                };
+                sink.frame = [&](Channel channel, std::span<const std::uint8_t> frame) {
+                    ncsSinkLog.push_back("frame " + std::string{channelName(channel)});
+                    ncsSession->onFrameReceived(channel, frame);
+                };
+                ncsEndpoint->pump(sink);
+            } else {
+                ncsEndpoint->pump(*ncsSession);
+            }
             ncsSession->poll();
             while (auto event = ncsSession->nextEvent()) {
                 if (ncsResponder == nullptr || !ncsResponder->handle(*event)) {
@@ -357,6 +378,35 @@ TEST(Tcp28Transport, ClassicPortSchemeProfile0BothRoles) {
 
     rig.deviceEndpoint->stop();
     rig.ncsEndpoint->stop();
+}
+
+// A host that pumps into a sink of its own sees every connectivity change
+// and inbound frame on its way to the session, and the link works as with
+// pump(PeerSession&).
+TEST(Tcp28Transport, PumpIntoAHostSink) {
+    Rig rig;
+    rig.ncsThroughSink = true;
+    rig.start();
+    ASSERT_TRUE(rig.waitForLink());
+    ASSERT_TRUE(
+        rig.deviceSession->enqueue(Channel::Mom, makeMessage(MessageType::ReqMachInfo)).ok());
+    ASSERT_TRUE(rig.waitFor(
+        [&] { return findAck(rig.deviceEvents, MessageType::ListMachInfo) != nullptr; }));
+    ASSERT_TRUE(rig.ncsSession->enqueue(Channel::Ro, makeMessage(MessageType::ReqMachInfo)).ok());
+    ASSERT_TRUE(
+        rig.waitFor([&] { return findAck(rig.ncsEvents, MessageType::ListMachInfo) != nullptr; }));
+    const auto saw = [&](const std::string& entry) {
+        return std::find(rig.ncsSinkLog.begin(), rig.ncsSinkLog.end(), entry) !=
+               rig.ncsSinkLog.end();
+    };
+    EXPECT_TRUE(saw("up mom"));
+    EXPECT_TRUE(saw("up ro"));
+    EXPECT_TRUE(saw("frame mom"));  // the device's reqMachInfo
+    EXPECT_TRUE(saw("frame ro"));   // the device's listMachInfo
+
+    rig.deviceEndpoint->stop();
+    rig.ncsEndpoint->stop();
+    ASSERT_TRUE(rig.waitFor([&] { return saw("down mom"); }));
 }
 
 // The activity hook wakes a host that does not poll: once the link is up (a

@@ -41,6 +41,7 @@
 #include <imos/session/runtime.h>
 #include <imos/session/transport.h>
 #include <imos/transports/activity.h>
+#include <imos/transports/channel_events.h>
 #include <imos/transports_export.h>
 
 namespace imos::transports::tcp28 {
@@ -148,6 +149,10 @@ public:
     /// session and drive redials. Call from the host's poll loop, before
     /// session.poll().
     void pump(PeerSession& session);
+    /// The same, into a sink of the host's: connectivity changes and
+    /// inbound frames, for a host that sees the traffic on its way to its
+    /// session (a facade such as incs::Ncs, or a traffic log).
+    void pump(const ChannelEventSink& sink);
 
     void setErrorHandler(Tcp28ErrorHandler handler);
     /// Wake-up hook: called on a transport thread whenever pump() has

@@ -341,12 +341,24 @@ bool Ws3Endpoint::isConnected(Channel) const {
 }
 
 void Ws3Endpoint::pump(PeerSession& session) {
+    ChannelEventSink sink;
+    sink.connected = [&session](Channel channel) { session.onChannelConnected(channel); };
+    sink.disconnected = [&session](Channel channel) { session.onChannelDisconnected(channel); };
+    sink.frame = [&session](Channel channel, std::span<const std::uint8_t> frame) {
+        session.onFrameReceived(channel, frame);
+    };
+    pump(sink);
+}
+
+void Ws3Endpoint::pump(const ChannelEventSink& sink) {
     if (impl_->started && !impl_->connectedAnnounced) {
         // HTTP is connectionless: the pipe is "up" as soon as the service
         // and worker are; per-call failures are diagnostics + retries.
         impl_->connectedAnnounced = true;
         for (std::size_t i = 0; i < kChannelCount; ++i) {
-            session.onChannelConnected(static_cast<Channel>(i));
+            if (sink.connected) {
+                sink.connected(static_cast<Channel>(i));
+            }
         }
     }
     std::deque<QueuedEvent> local;
@@ -357,10 +369,12 @@ void Ws3Endpoint::pump(PeerSession& session) {
     for (QueuedEvent& event : local) {
         switch (event.kind) {
             case QueuedEvent::Kind::Frame:
-                session.onFrameReceived(
-                    event.channel, std::span<const std::uint8_t>{
-                                       reinterpret_cast<const std::uint8_t*>(event.frame.data()),
-                                       event.frame.size()});
+                if (sink.frame) {
+                    sink.frame(event.channel,
+                               std::span<const std::uint8_t>{
+                                   reinterpret_cast<const std::uint8_t*>(event.frame.data()),
+                                   event.frame.size()});
+                }
                 break;
             case QueuedEvent::Kind::Diagnostic:
                 impl_->log(LogLevel::Warning, event.diagnostic);
