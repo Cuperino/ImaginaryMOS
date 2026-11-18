@@ -526,9 +526,12 @@ Result<void> RunningOrderModel::applyElementAction(const codec::Message& message
                                                            : "element_source mixes element kinds");
     }
 
-    // All mutations run on a scratch copy; commit only on success so a
-    // failed action leaves the stored RO untouched (transactionality).
-    codec::XmlNode work = it->second.node;
+    // Mutations run in place. Each sequence operation checks everything it
+    // needs (IDs, anchors, payload keys) before it changes anything, so a
+    // failed action still leaves the stored RO untouched. A scratch copy of
+    // the whole RO per action made a 500-story running order cost a deep
+    // copy for every element moved or replaced.
+    codec::XmlNode& work = it->second.node;
     const Sequence stories{&work, "story", "storyID"};
 
     const auto itemSequence = [&](std::string_view storyID) -> Result<Sequence> {
@@ -605,11 +608,7 @@ Result<void> RunningOrderModel::applyElementAction(const codec::Message& message
         }
     }
 
-    if (!outcome.ok()) {
-        return outcome;
-    }
-    it->second.node = std::move(work);
-    return {};
+    return outcome;
 }
 
 Result<void> RunningOrderModel::applyElementStat(const codec::Message& message) {
