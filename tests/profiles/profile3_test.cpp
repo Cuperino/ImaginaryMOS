@@ -11,6 +11,7 @@
 // escalation on NACK, the resync-preference upgrade, three concurrently
 // active channels, and the illustrative-fixture leniency probes.
 
+#include <algorithm>
 #include <cstddef>
 #include <fstream>
 #include <map>
@@ -245,6 +246,7 @@ public:
     void put(const std::string& id, Message message) {
         objects_.insert_or_assign(id, std::move(message));
     }
+    void remove(const std::string& id) { objects_.erase(id); }
 
 private:
     std::map<std::string, Message> objects_;
@@ -271,6 +273,7 @@ public:
     void put(const std::string& id, Message message) {
         objects_.insert_or_assign(id, std::move(message));
     }
+    void remove(const std::string& id) { objects_.erase(id); }
 
 private:
     std::map<std::string, Message> objects_;
@@ -1069,6 +1072,54 @@ TEST(Profile3, ResyncFallsBackToReqAllWithoutAdvertisement) {
     EXPECT_EQ(countType(events, DirectoryEventType::SyncAcknowledged), 1);  // mosReqAll path
     EXPECT_EQ(fx.ncs->objectIDs().size(), 2U);
     EXPECT_FALSE(fx.ncs->nextQueryPage().has_value());
+}
+
+// 20b. A resync refills the mirror from scratch as far as the peer is
+//      concerned: an object it no longer lists was deleted while the NCS
+//      was not listening, and is swept out as ObjectDeleted once the refill
+//      is complete - by pages (Profile 3) or one mosListAll (Profile 1).
+template <typename Source>
+void resyncSweeps(bool profile3, std::size_t pageSize) {
+    TwoRoleFixture fx;
+    Source source;
+    for (int i = 1; i <= 5; ++i) {
+        const std::string id = "O" + std::to_string(i);
+        source.put(id, makeObjectWithPayload(id, "clip", "http://s/1", "<N/>"));
+    }
+    fx.device->attach(source);
+    fx.connectAll();
+    exchangeMachineInfo(fx);
+    ASSERT_TRUE(fx.ncs->resyncDirectory(pageSize).ok());
+    fx.settle();
+    ASSERT_EQ(fx.ncs->objectIDs().size(), 5U);
+    (void)drainDirectory(*fx.ncs);
+    while (fx.ncs->nextQueryPage()) {
+    }
+
+    source.remove("O2");  // gone with no DELETED push heard
+    source.remove("O5");
+    ASSERT_TRUE(fx.ncs->resyncDirectory(pageSize).ok());
+    fx.settle();
+
+    std::vector<std::string> ids = fx.ncs->objectIDs();
+    std::sort(ids.begin(), ids.end());
+    EXPECT_EQ(ids, (std::vector<std::string>{"O1", "O3", "O4"}));
+    std::vector<std::string> deleted;
+    for (const DirectoryEvent& event : drainDirectory(*fx.ncs)) {
+        if (event.type == DirectoryEventType::ObjectDeleted) {
+            deleted.push_back(event.objID);
+        }
+    }
+    EXPECT_EQ(deleted, (std::vector<std::string>{"O2", "O5"}));
+    (void)profile3;
+}
+
+TEST(Profile3, ResyncByPagesSweepsWhatThePeerNoLongerLists) {
+    resyncSweeps<AdvancedObjectSource>(true, 2);
+}
+
+TEST(Profile3, ResyncByReqAllSweepsWhatThePeerNoLongerLists) {
+    resyncSweeps<PlainObjectSource>(false, 0);
 }
 
 // 21. Resync-on-miss: a NACKed mosReqObj triggers the preferred mechanism

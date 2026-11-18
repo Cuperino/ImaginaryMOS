@@ -23,6 +23,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -191,7 +192,8 @@ private:
 
 enum class DirectoryEventType : std::uint8_t {
     ObjectUpdated,     ///< a mosObj was ingested (push, reqObj hit, or sync)
-    ObjectDeleted,     ///< a mosObj with status "DELETED" removed a mirror entry
+    ObjectDeleted,     ///< a mosObj with status "DELETED", or a finished resync() that no
+                       ///< longer lists it, removed a mirror entry
     RequestFailed,     ///< a NACK mosAck answered one of our requests
     SyncAcknowledged,  ///< our mosReqAll was acked; the catalog stream follows
     ObjectCreated,     ///< our create was acked; objID from statusDescription
@@ -350,6 +352,17 @@ private:
         std::size_t nextStart = 1;
     } resyncPaging_;
     std::uint64_t nextQuerySerial_ = 1;
+    /// A resync() refills the mirror; objects it does not list again were
+    /// deleted while nobody was listening (a mosObj DELETED pushed then
+    /// went nowhere). They are swept when the refill is known complete:
+    /// the mosListAll arrived, or the last resync page did.
+    struct Sweep {
+        bool active = false;
+        bool viaList = false;  ///< Profile 1 mosReqAll; else Profile 3 pages
+        std::unordered_set<std::string> seen;
+    } sweep_;
+    /// Drop what the finished refill did not list, as ObjectDeleted.
+    void finishSweep();
 };
 
 /// Build a mosObjCreate message from the scalar metadata fields (spec

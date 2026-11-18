@@ -470,7 +470,10 @@ Result<Seq> ObjectDirectory::query(const ObjectQuery& query) {
 }
 
 Result<Seq> ObjectDirectory::resync(std::size_t pageSize) {
+    sweep_ = Sweep{};
+    sweep_.active = true;
     if (!peerAdvertisesProfile3()) {
+        sweep_.viaList = true;
         return requestAll(0);  // Profile 1 fallback: batch mosReqAll
     }
     resyncPaging_.active = true;
@@ -538,6 +541,9 @@ void ObjectDirectory::completeSchemas(const SessionEvent& event) {
 
 void ObjectDirectory::completeQuery(const SessionEvent& event, const Outstanding& request) {
     if (event.message.type() != codec::MessageType::MosObjList) {
+        if (request.resyncPage) {
+            sweep_ = Sweep{};  // an unfinished refill proves nothing gone
+        }
         resyncPaging_.active = false;
         pushEvent(DirectoryEvent{DirectoryEventType::RequestFailed, "",
                                  childText(event.message, "statusDescription")});
@@ -574,6 +580,9 @@ void ObjectDirectory::completeQuery(const SessionEvent& event, const Outstanding
     }
     if (!morePages) {
         resyncPaging_.active = false;
+        if (sweep_.active && !sweep_.viaList) {
+            finishSweep();
+        }
         return;
     }
     // Chain the next window (same queryID — the spec's cached-search

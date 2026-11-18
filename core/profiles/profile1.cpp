@@ -3,6 +3,7 @@
 
 #include <imos/profiles/profile1.h>
 
+#include <algorithm>
 #include <charconv>
 #include <string>
 #include <system_error>
@@ -206,6 +207,9 @@ bool ObjectDirectory::handle(const SessionEvent& event) {
                         }
                     }
                     ackPush(event.channel, event.message);
+                    if (sweep_.active && sweep_.viaList) {
+                        finishSweep();  // the whole catalog, in one message
+                    }
                     return true;
                 }
                 default:
@@ -283,6 +287,13 @@ void ObjectDirectory::ingest(codec::Message mosObj) {
     if (objID.empty()) {
         return;  // malformed: nothing to key the mirror on
     }
+    if (sweep_.active) {
+        if (childText(mosObj, "status") == "DELETED") {
+            sweep_.seen.erase(objID);
+        } else {
+            sweep_.seen.insert(objID);
+        }
+    }
     if (childText(mosObj, "status") == "DELETED") {
         objects_.erase(objID);
         pushEvent(DirectoryEvent{DirectoryEventType::ObjectDeleted, std::move(objID), ""});
@@ -303,6 +314,21 @@ void ObjectDirectory::ingest(codec::Message mosObj) {
         }
     }
     objects_.insert_or_assign(std::move(objID), std::move(mosObj));
+}
+
+void ObjectDirectory::finishSweep() {
+    std::vector<std::string> gone;
+    for (const auto& [objID, object] : objects_) {
+        if (!sweep_.seen.contains(objID)) {
+            gone.push_back(objID);
+        }
+    }
+    sweep_ = Sweep{};
+    std::sort(gone.begin(), gone.end());  // a stable order for listeners
+    for (std::string& objID : gone) {
+        objects_.erase(objID);
+        pushEvent(DirectoryEvent{DirectoryEventType::ObjectDeleted, std::move(objID), ""});
+    }
 }
 
 Result<Seq> ObjectDirectory::requestObject(std::string_view objID) {
