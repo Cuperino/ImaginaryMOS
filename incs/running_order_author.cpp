@@ -615,6 +615,21 @@ Result<imos::Seq> RunningOrderAuthor::sendStory(std::string_view roID, std::stri
         messageBody->appendElement("storyBody").setAttribute("Read1stMEMasBody", "true");
     }
     messageBody->children.push_back(authored->node);
+    if (dialect_.padLoneParagraph && !authored->agency) {
+        // DialectProfile::padLoneParagraph: a lone <p> gets an empty one after it.
+        XmlNode& body = messageBody->children.back();
+        int elements = 0;
+        bool loneParagraph = false;
+        for (const XmlNode& child : body.children) {
+            if (child.kind == imos::codec::XmlNodeKind::Element) {
+                ++elements;
+                loneParagraph = child.isElement("p");
+            }
+        }
+        if (elements == 1 && loneParagraph) {
+            body.appendElement("p");
+        }
+    }
 
     storySendLinked_.insert(std::string{roID});
     Result<imos::Seq> seq = session_->enqueue(std::move(send));

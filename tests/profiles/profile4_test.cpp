@@ -25,6 +25,7 @@
 
 #include <imos/codec/message.h>
 #include <imos/codec/story_body.h>
+#include <imos/dialect.h>
 #include <imos/encoding/encoding.h>
 #include <imos/profiles/profile4.h>
 
@@ -318,6 +319,41 @@ TEST(Profile4, StorySendDeliversAndReplacesOnResend) {
     auto resolved = imos::codec::resolveStoryBody(*stored);
     ASSERT_TRUE(resolved.ok());
     EXPECT_EQ(resolved.value().storyBody->firstChildElement("p")->text(), "Take two");
+}
+
+// 4b. The Sofie dialect (plan §7): mos-connection loses a body whose only
+//     child is one <p>, so a lone paragraph is sent with an empty one after
+//     it. Two paragraphs go as they are, and so does a baseline peer's.
+TEST(Profile4, TheSofieDialectPadsALoneParagraph) {
+    const auto paragraphs = [](const Message& story) {
+        std::vector<std::string> texts;
+        auto resolved = imos::codec::resolveStoryBody(story);
+        if (resolved.ok()) {
+            for (const auto& child : resolved.value().storyBody->children) {
+                if (child.isElement("p")) {
+                    texts.push_back(child.text());
+                }
+            }
+        }
+        return texts;
+    };
+    const auto sent = [&](const imos::DialectProfile& dialect, const char* body) {
+        TwoRoleFixture fx;
+        fx.connectAll();
+        convergePlainRo(fx, "RO1", 1);
+        fx.ncs->author().setDialect(dialect);
+        EXPECT_TRUE(fx.ncs->author().setStoryBody("RO1", "s1", makeStoryBody(body)).ok());
+        EXPECT_TRUE(fx.ncs->sendStory("RO1", "s1").ok());
+        fx.settle();
+        const Message* stored = fx.device->story("RO1", "s1");
+        return stored == nullptr ? std::vector<std::string>{{"(none)"}} : paragraphs(*stored);
+    };
+    using Texts = std::vector<std::string>;
+    EXPECT_EQ(sent(imos::sofieDialect(), "<p>Good evening.</p>"), (Texts{"Good evening.", ""}));
+    EXPECT_EQ(sent(imos::sofieDialect(), "<p>One.</p><p>Two.</p>"), (Texts{"One.", "Two."}));
+    EXPECT_EQ(sent(imos::baselineDialect(), "<p>Good evening.</p>"), (Texts{"Good evening."}));
+    EXPECT_EQ(imos::dialectNamed("sofie"), imos::sofieDialect());
+    EXPECT_FALSE(imos::dialectNamed("enps").has_value());  // not yet (M7)
 }
 
 // 5. A sink rejection NACKs the roStorySend with the sink's detail, the

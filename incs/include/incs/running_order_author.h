@@ -36,6 +36,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <imos/dialect.h>
+
 #include <imos/codec/message.h>
 #include <imos/error.h>
 #include <imos/profiles/profile2.h>
@@ -175,6 +177,11 @@ public:
     /// a committed message.
     imos::Result<imos::Seq> sendStory(std::string_view roID, std::string_view storyID);
 
+    /// The peer's dialect (plan §7): what sendStory() and the commit
+    /// sequences adjust for it. Baseline unless set.
+    void setDialect(imos::DialectProfile dialect) { dialect_ = std::move(dialect); }
+    [[nodiscard]] const imos::DialectProfile& dialect() const noexcept { return dialect_; }
+
     // ---- queries ---------------------------------------------------------
 
     /// The desired state (shared RunningOrderModel semantics and queries).
@@ -226,6 +233,7 @@ public:
     std::optional<imos::codec::Message> runningOrder(std::string_view roID) override;
 
 private:
+    imos::DialectProfile dialect_;
     /// What the device is believed to hold for one RO.
     struct DeviceRo {
         imos::codec::XmlNode node;  ///< projected RO subtree

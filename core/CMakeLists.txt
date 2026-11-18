@@ -16,6 +16,7 @@ imos_add_library(core
   EXPORT_BASE  IMOS_CORE
   SOURCES
     version.cpp
+    dialect.cpp
     fqid.cpp
     codec/xml.cpp
     codec/xml_parse.cpp

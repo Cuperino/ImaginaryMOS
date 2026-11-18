@@ -50,6 +50,8 @@ struct NcsConfig {
     /// Foreign to the device is what would demand an out-of-band transfer.
     /// All-off by default; gate enabled configs through validateConfig().
     imos::profiles::Profile6Config profile6{};
+    /// The peer device's dialect (plan §7), applied by the author.
+    imos::DialectProfile dialect{};
 };
 
 class IMOS_INCS_API Ncs {

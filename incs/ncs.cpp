@@ -67,6 +67,7 @@ Ncs::Ncs(NcsConfig config, imos::PeerSession::Dependencies deps)
     profile4_.setStore(&author_.desired());  // roReqAll enumerates the same store
     directory_.setPeerInfo(&profile0_);      // resync() reads the peer's Profile 3 flag
     author_.setProfile6(&profile6_);         // authoring-time foreign-reference rejection
+    author_.setDialect(config.dialect);      // what the peer needs adjusted (plan §7)
     if (profile6Error_.has_value()) {
         // Defense in depth for hosts that skipped validateConfig(): run
         // without Profile 6 and surface the bring-up diagnostic once.

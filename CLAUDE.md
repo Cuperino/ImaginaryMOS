@@ -29,7 +29,10 @@ presets). **M6 (legacy transports) is done** — design of record
 fetched on demand into `reference/` by `tools/fetch_spec.py` rather than
 vendored (see the Fixtures section — broken TLS, so verification-off + SHA-256
 pin; the fetched HTML is the source of truth).
-**Remaining: the rest of M7 (dialect profiles). The C ABI is out of scope —
+**Remaining: the rest of M7 (dialect profiles) - the mechanism and the
+`sofie` preset have landed (`core/include/imos/dialect.h`, applied through
+`incs::NcsConfig::dialect`; delta in `dialects/README.md`, observed against
+mos-connection 5.0.0); iNEWS, ENPS and Octopus presets are still to come. The C ABI is out of scope —
 dropped by decision: every intended consumer embeds the C++ libraries
 directly (native C++, Flutter over C++, Rust via CXX, Node via a C++
 addon), so there is nothing to build or maintain.**
@@ -166,7 +169,7 @@ manifest pinned at 24 known
 operations; emits the plan §10 matrix artifact, holes fail); the `lint`
 job's fixtures-freshness step also regenerates the WSDL fixture via
 `tools/extract_wsdl.py`.
-`dialects/` remains an intentional placeholder for M7. Don't assume a
+`dialects/README.md` holds each preset's delta (only `sofie` so far). Don't assume a
 directory has real code — check. The build only wires targets that have
 real sources.
 
